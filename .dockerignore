@@ -1,0 +1,8 @@
+*
+!hub/
+!hub/**
+!static/
+!static/**
+!Dockerfile
+**/__pycache__
+**/*.pyc

@@ -1,0 +1,30 @@
+name: widget-harbor
+services:
+  hub:
+    build: .
+    image: widget-harbor:local
+    restart: unless-stopped
+    init: true
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${HOST_PORT:-8765}:8765"
+    environment:
+      SITE_URL: "${SITE_URL:-http://localhost:8765}"
+      ADMIN_PASSWORD: "${ADMIN_PASSWORD:?请先运行初始化脚本或填写 .env 中的 ADMIN_PASSWORD}"
+      ALLOWED_ORIGINS: "${ALLOWED_ORIGINS:-}"
+      DATA_DIR: /data
+    volumes:
+      - harbor-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,noexec,nosuid
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+volumes:
+  harbor-data:
