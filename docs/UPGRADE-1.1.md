@@ -1,17 +1,17 @@
 # iStoreOS 升级到 v1.1.0
 
-适用于已安装到 `/mnt/nvme/tools/widget-harbor` 的实例。不要重新运行首次安装脚本。
+适用于已安装到 `/opt/widget-harbor` 的实例。不要重新运行首次安装脚本。
 
-1. 上传 `widget-harbor-v1.1.0.tar.gz` 到 `/mnt/nvme/tools/`。
+1. 上传 `widget-harbor-v1.1.0.tar.gz` 到 `/opt/`。
 2. 在 iStoreOS 已登录终端粘贴：
 
 ```sh
 (
   set -eu
-  cd /mnt/nvme/tools
-  stage=$(mktemp -d /mnt/nvme/tools/widget-harbor-update.XXXXXX)
+  cd /opt
+  stage=$(mktemp -d /opt/widget-harbor-update.XXXXXX)
   tar -xzf widget-harbor-v1.1.0.tar.gz -C "$stage"
-  sh "$stage/widget-harbor/scripts/upgrade-istoreos.sh"
+  sh "$stage/widget-harbor/scripts/upgrade.sh" /opt/widget-harbor
 )
 ```
 
@@ -20,7 +20,7 @@
 旧 Compose 文件会在成功重建后移除，今后使用：
 
 ```sh
-cd /mnt/nvme/tools/widget-harbor
+cd /opt/widget-harbor
 docker compose -f docker-compose.yml -f docker-compose.istoreos.yml ps
 docker compose -f docker-compose.yml -f docker-compose.istoreos.yml logs --tail=80 hub
 ```
@@ -34,7 +34,7 @@ docker compose -f docker-compose.yml -f docker-compose.istoreos.yml logs --tail=
 需要回退时，将以下 `备份目录完整路径` 替换成脚本输出路径：
 
 ```sh
-cd /mnt/nvme/tools/widget-harbor
+cd /opt/widget-harbor
 backup='备份目录完整路径'
 test -f "$backup/image-id.txt" && docker tag "$(cat "$backup/image-id.txt")" widget-harbor:local &&
 docker compose -f docker-compose.yml -f docker-compose.istoreos.yml up -d --no-build --no-deps hub

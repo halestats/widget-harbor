@@ -3,7 +3,7 @@ const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/st
 const src=fs.readFileSync('static/app.js','utf8');
 const nodes=new Map(),storage=new Map(),timers=new Map();let job={},reloads=0,next=0;
 const node=s=>{if(!nodes.has(s))nodes.set(s,{hidden:false,innerHTML:'empty placeholder',classList:{toggle(){}},value:''});return nodes.get(s)};
-const ctx=vm.createContext({$:node,api:async()=>job,reload:async()=>reloads++,sessionStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},setTimeout:(f,ms)=>{timers.set(++next,{f,ms});return next},clearTimeout:id=>timers.delete(id),page:'assets',listMode:'list',sortMode:'updated',selectedFiles:new Set(),localStorage:{setItem(){}},document:{querySelectorAll:()=>[]},render(){},importTimer:undefined});
+const ctx=vm.createContext({$:node,api:async()=>job,reload:async()=>reloads++,sessionStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},setTimeout:(f,ms)=>{timers.set(++next,{f,ms});return next},clearTimeout:id=>timers.delete(id),page:'assets',listMode:'list',sortMode:'updated',selectedFiles:new Set(),localStorage:{setItem(){}},document:{querySelectorAll:()=>[]},render(){},moveFiles(){},importTimer:undefined});
 vm.runInContext(src.slice(src.indexOf('function listControls('),src.indexOf('async function imageData')),ctx);
 vm.runInContext(src.slice(src.indexOf('let dismissTimer'),src.indexOf('function renderSettings')),ctx);
 (async()=>{

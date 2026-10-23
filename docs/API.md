@@ -97,3 +97,17 @@ module_ids 按数组顺序输出。最多 100 个，不得重复；只能引用�
 ### v1.3.1
 
 后台任务状态增加 `id`，每次任务唯一，用于关闭终态提示。远程合集刷新同时同步上游 title、description、icon（缺失时保留，description/icon 空字符串时清空）；slug 不变。自建合集资料不变。
+
+## v1.4 图库与分类
+
+以下写入接口均要求管理员会话与来源校验。
+
+- `POST /api/images`：`{data: base64}`，返回独立图片 URL；PNG/JPEG/WebP/GIF，最大 1 MiB。
+- `GET /images/{sha256}`：公开图片，内容摘要 URL 使用不可变缓存。
+- `POST /api/folders`、`PUT /api/folders/{id}`：`{name, icon}`。
+- `DELETE /api/folders/{id}`：删除分类，文件回到根目录。
+- `POST /api/assets/move`：`{ids, folder_id}`，空字符串表示根目录。
+- `PUT /api/order`：`{scope, ids}`，scope 为 modules/assets/collections/folders，合集用 slug，其他用 ID。
+- `GET /api/state` 额外返回 folders、locations、orders；合集的 icon_display 是缓存地址。
+
+图片保存在数据库及 data/images/，JSON 备份含图片原始数据。资源 URL 不受移动文件夹或排序影响。

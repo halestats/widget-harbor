@@ -1,16 +1,16 @@
 # iStoreOS 升级到 v1.3.1
 
-保留 `/mnt/nvme/tools/widget-harbor` 原目录、`.env` 和 `data`。不要重新安装，不要删除目录。此版本包含临时挂载数据库备份的修复，无需额外 sed 补丁。
+保留 `/opt/widget-harbor` 原目录、`.env` 和 `data`。不要重新安装，不要删除目录。此版本包含临时挂载数据库备份的修复，无需额外 sed 补丁。
 
-上传 `widget-harbor-v1.3.1.tar.gz` 至 `/mnt/nvme/tools/` 后，在 iStoreOS 终端执行：
+上传 `widget-harbor-v1.3.1.tar.gz` 至 `/opt/` 后，在 iStoreOS 终端执行：
 
 ```sh
 (
   set -eu
-  cd /mnt/nvme/tools
-  stage=$(mktemp -d /mnt/nvme/tools/widget-harbor-update.XXXXXX)
+  cd /opt
+  stage=$(mktemp -d /opt/widget-harbor-update.XXXXXX)
   tar -xzf widget-harbor-v1.3.1.tar.gz -C "$stage"
-  sh "$stage/widget-harbor/scripts/upgrade-istoreos.sh"
+  sh "$stage/widget-harbor/scripts/upgrade.sh" /opt/widget-harbor
 )
 ```
 
@@ -46,7 +46,7 @@
 升级备份位于项目 `backups/upgrade-时间-进程号/`。新增的同步配置表不改变原模块内容。回退旧版本前保留本次备份；旧版本不会运行每日刷新。
 
 ```sh
-cd /mnt/nvme/tools/widget-harbor
+cd /opt/widget-harbor
 backup='替换为升级脚本打印的备份目录完整路径'
 test -f "$backup/image-id.txt" && docker tag "$(cat "$backup/image-id.txt")" widget-harbor:local &&
 docker compose -f docker-compose.yml -f docker-compose.istoreos.yml up -d --no-build --no-deps hub

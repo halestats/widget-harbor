@@ -71,3 +71,7 @@ docker run --rm --entrypoint python -v "$(pwd)/tests:/app/tests:ro" widget-harbo
 ## 首次公开发行验收
 
 2026-10-23：用户确认 v1.3.1 在自己的 iStoreOS 部署“基本上没什么问题”，同意公开发布。本地及 Linux Docker 中各完成 34 次 Python 测试，前端逻辑回归通过。此反馈不等于所有第三方模块、客户端版本或硬件均已验证。公开发行整理去除个人域名及机器状态记录；安装器要求显式传入 ISTOREOS_IP，升级器保留既有来源配置。
+
+## v1.4 回归
+
+`tests/test_catalog.py` 覆盖图片校验与公开缓存、旧图标迁移、远程缓存失败回退、文件夹移动/删除、持久化排序、schema 2 备份及 schema 1 恢复。发布前运行 Python 全套测试、前端回归以及 Docker 构建；浏览器检查手机布局与交互。

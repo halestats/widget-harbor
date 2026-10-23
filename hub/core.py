@@ -115,6 +115,8 @@ class Store:
     def __init__(self, directory):
         Path(directory).mkdir(parents=True, exist_ok=True)
         self.path = str(Path(directory) / 'hub.sqlite3')
+        from .catalog import Catalog, SCHEMA
+        self.catalog=Catalog(self)
         with self.connect() as db:
             if db.execute('PRAGMA user_version').fetchone()[0] not in (0, 1):
                 raise ValueError('数据库版本不受支持，请使用匹配版本并按迁移文档操作')
@@ -140,6 +142,8 @@ class Store:
             PRAGMA user_version=1;
             ''')
 
+            db.executescript(SCHEMA)
+            self.catalog.migrate_icons(db)
             if 'origin' not in [r[1] for r in db.execute('PRAGMA table_info(collection_sync)')]:
                 db.execute("ALTER TABLE collection_sync ADD COLUMN origin TEXT NOT NULL DEFAULT 'custom'")
                 db.execute("UPDATE collection_sync SET origin='imported' WHERE source_url != ''")
@@ -242,11 +246,11 @@ class Store:
                 item = dict(row)
                 item['data'] = base64.b64encode(item.pop('content')).decode()
                 modules.append(item)
-            return dict(format='widget-harbor', schema=1, modules=modules, collections=self.collections(db))
+            return dict(format='widget-harbor', schema=2, modules=modules, collections=self.collections(db),catalog=self.catalog.export(db))
 
     def restore(self, obj):
-        if not isinstance(obj, dict) or obj.get('format') != 'widget-harbor' or obj.get('schema') != 1:
-            raise Problem('仅支持 Widget Harbor v1 备份')
+        if not isinstance(obj, dict) or obj.get('format') != 'widget-harbor' or obj.get('schema') not in (1,2):
+            raise Problem('仅支持 Widget Harbor v1/v2 备份')
         if not isinstance(obj.get('modules'), list) or not isinstance(obj.get('collections'), list):
             raise Problem('备份结构无效')
         if len(obj['modules']) > 10000 or len(obj['collections']) > 10000:
@@ -274,3 +278,6 @@ class Store:
                 if any(not isinstance(v,int) or isinstance(v,bool) or not 0<=v<=2**53 for v in stamps):
                     raise Problem('备份刷新时间无效')
                 db.execute('UPDATE collection_sync SET last_attempt=?,last_success=?,error=? WHERE slug=?', (*stamps,text(collection.get('error',''),2000),slug))
+
+            self.catalog.restore(db,obj.get('catalog',{}))
+            self.catalog.migrate_icons(db)

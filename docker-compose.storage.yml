@@ -1,0 +1,10 @@
+# 配合 docker-compose.yml 使用，不能单独启动。
+# 仅替换 /data 挂载；端口和站点地址来自 .env。
+services:
+  hub:
+    volumes:
+      - type: bind
+        source: "${WIDGET_DATA_DIR:?请先确认已挂载的数据盘，并在 .env 填写 WIDGET_DATA_DIR 的绝对路径}"
+        target: /data
+        bind:
+          create_host_path: false

@@ -24,6 +24,11 @@ class Scheduler(threading.Thread):
     def tick(self):
         with self.server.store.connect() as db:
             rows = db.execute('SELECT slug FROM collection_sync WHERE auto_refresh=1 AND last_attempt < ?', (int(time.time())-86400,)).fetchall()
+        with self.server.store.connect() as db:
+            icons=[r[0] for r in db.execute("SELECT icon FROM collections UNION SELECT icon FROM asset_folders")]
+        for icon in icons:
+            if self.stop.is_set():return
+            self.server.store.catalog.cache(icon)
         for row in rows:
             if self.stop.is_set():return
             if not self.server.import_lock.acquire(blocking=False):break
@@ -139,3 +144,5 @@ class Scheduler(threading.Thread):
                 # available to custom collections and are never deleted implicitly.
                 store.save_collection(db,{**current,**headers,'module_ids':ids},True)
             db.execute("UPDATE collection_sync SET last_success=?,error='' WHERE slug=?",(int(time.time()),slug))
+
+        if source and headers.get('icon'):store.catalog.cache(headers['icon'],force=True)

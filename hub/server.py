@@ -98,13 +98,13 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header('Content-Type', mime)
         self.send_header('Content-Length', str(len(value)))
-        self.send_header('Cache-Control', 'no-store')
+        self.send_header('Cache-Control', (headers or {}).get('Cache-Control','no-store'))
         self.send_header('X-Content-Type-Options', 'nosniff')
         self.send_header('Referrer-Policy', 'no-referrer')
         self.send_header('X-Frame-Options', 'DENY')
         self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https: http:; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
         for key, val in (headers or {}).items():
-            self.send_header(key, val)
+            if key.lower()!='cache-control':self.send_header(key, val)
         self.end_headers()
         if self.command != 'HEAD':
             self.wfile.write(value)
@@ -233,6 +233,8 @@ class Handler(BaseHTTPRequestHandler):
                 raise Problem('合集不存在', 404)
             result = {k:row[k] for k in ('title','description','icon')}
             rows = db.execute('SELECT m.* FROM modules m JOIN members x ON x.module_id=m.id WHERE x.slug=? ORDER BY x.position', (slug,))
+            result['icon']=self.server.store.catalog.display(db,result['icon'])
+            if result['icon'].startswith('/images/'):result['icon']=self.server.site_url+result['icon']
             result['widgets'] = []
             for m in rows:
                 if m['platform'] not in (platform, 'both'):
@@ -308,6 +310,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.server.store.save_module(db, module)
             slug = self.server.store.save_collection(db, collection)
             db.execute('UPDATE collection_sync SET last_attempt=?,last_success=? WHERE slug=?',(int(time.time()),int(time.time()),slug))
+        self.server.store.catalog.cache(collection.get('icon',''))
         return {'slug':slug, 'imported':len(modules)}
 
     def dispatch(self):
@@ -323,6 +326,12 @@ class Handler(BaseHTTPRequestHandler):
                 mime = mimetypes.guess_type(filename)[0] or 'application/octet-stream'
                 return self.send(200, (ROOT/'static'/filename).read_bytes(), mime+'; charset=utf-8')
             import re
+            image_match=re.fullmatch(r'/images/([a-f0-9]{64})',path)
+            if image_match:
+                with self.server.store.connect() as db:row=db.execute('SELECT * FROM images WHERE id=?',(image_match[1],)).fetchone()
+                if not row:raise Problem('图片不存在',404)
+                self.server.store.catalog.materialize(row['id'],row['content'])
+                return self.send(200,row['content'],row['mime'],{'Cache-Control':'public, max-age=31536000, immutable'})
             match = re.fullmatch(r'/api/collections/([\w-]+)\.(fwd|rex)', path)
             if match:
                 return self.subscription(match[1], 'forward' if match[2]=='fwd' else 'rex')
@@ -347,6 +356,32 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/api/password' and method == 'POST':
             return self.change_password(self.body())
         store = self.server.store
+        catalog=store.catalog
+        if path=='/api/images' and method=='POST':
+            obj=self.body()
+            try:data=base64.b64decode(obj.get('data',''),validate=True)
+            except (ValueError,TypeError):raise Problem('图片编码无效') from None
+            with store.connect() as db:url=catalog.put(db,data)
+            catalog.materialize(url.rsplit('/',1)[1],data)
+            return self.send(201,{'url':url})
+        if path=='/api/order' and method=='PUT':
+            obj=self.body()
+            with store.connect() as db:catalog.reorder(db,obj.get('scope'),obj.get('ids'))
+            return self.send(200,{'ok':True})
+        if path=='/api/assets/move' and method=='POST':
+            obj=self.body()
+            with store.connect() as db:catalog.move(db,obj.get('ids'),text(obj.get('folder_id',''),32))
+            return self.send(200,{'ok':True})
+        import re
+        folder_match=re.fullmatch(r'/api/folders/([a-f0-9]{32})',path)
+        if (path=='/api/folders' and method=='POST') or (folder_match and method=='PUT'):
+            obj=self.body()
+            with store.connect() as db:ident=catalog.folder(db,obj,folder_match[1] if folder_match else None)
+            catalog.cache(obj.get('icon',''))
+            return self.send(200,{'id':ident})
+        if folder_match and method=='DELETE':
+            with store.connect() as db:db.execute('DELETE FROM asset_folders WHERE id=?',(folder_match[1],))
+            return self.send(200,{'ok':True})
         if path == '/api/import/status' and method == 'GET':
             with self.server.job_lock:
                 return self.send(200, self.server.job)
@@ -397,9 +432,11 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(202,{'ok':True})
         if path == '/api/state' and method == 'GET':
             with store.connect() as db:
-                modules = [{k:v for k,v in dict(r).items() if k != 'content'} for r in db.execute('SELECT * FROM modules ORDER BY updated_at DESC, rowid DESC')]
+                modules = [{k:v for k,v in dict(r).items() if k != 'content'} for r in db.execute('SELECT * FROM modules WHERE id NOT IN (SELECT module_id FROM legacy_icons) ORDER BY updated_at DESC, rowid DESC')]
                 collections = store.collections(db)
-            return self.send(200, {'modules':modules, 'collections':collections, 'site_url':self.server.site_url})
+                extra=catalog.state(db)
+                for c in collections:c['icon_display']=catalog.display(db,c['icon'])
+            return self.send(200, {'modules':modules, 'collections':collections, 'site_url':self.server.site_url,**extra})
         if path == '/api/backup' and method == 'GET':
             return self.send(200, store.backup(), headers={'Content-Disposition':'attachment; filename="widget-harbor-backup.json"'})
         if path == '/api/restore' and method == 'POST':
@@ -434,9 +471,11 @@ class Handler(BaseHTTPRequestHandler):
                 self.server.import_lock.release()
             return self.send(201, result)
         if path == '/api/modules' and method == 'POST':
-            module = prepare_module(self.body())
+            payload=self.body()
+            module = prepare_module(payload)
             with store.connect() as db:
                 store.save_module(db, module)
+                if module['kind']=='asset' and payload.get('folder_id'):catalog.move(db,[module['id']],text(payload['folder_id'],32))
             return self.send(201, {'id':module['id']})
         import re
         match = re.fullmatch(r'/api/modules/([a-f0-9]{32})(/refresh)?', path)
@@ -470,6 +509,8 @@ class Handler(BaseHTTPRequestHandler):
             obj = self.body()
             with store.connect() as db:
                 slug = store.save_collection(db, obj, method=='PUT')
+                catalog.migrate_icons(db)
+            catalog.cache(obj.get('icon',''))
             return self.send(200, {'slug':slug})
         match = re.fullmatch(r'/api/collections/([\w-]+)', path)
         if match and method == 'DELETE':

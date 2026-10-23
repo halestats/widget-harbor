@@ -20,6 +20,9 @@ class SyncTests(unittest.TestCase):
         self.tmp=tempfile.TemporaryDirectory()
         self.server=HubServer(('127.0.0.1',0),self.tmp.name,'test-password-long','http://localhost:8765')
         self.store=self.server.store
+        self.icon_patch=patch.object(self.store.catalog,'cache',side_effect=lambda source,**kw:source)
+        self.icon_patch.start()
+        self.addCleanup(self.icon_patch.stop)
     def tearDown(self):
         self.server.server_close();self.server.scheduler.join(2);self.tmp.cleanup()
     def module(self,source='',group='',content=SOURCE,**kw):

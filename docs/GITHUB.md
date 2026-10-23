@@ -17,7 +17,7 @@
 在干净的 Git 检出目录执行：
 
 ```sh
-python3 scripts/package_release.py --version v1.3.1 --output dist
+python3 scripts/package_release.py --version v1.4.0 --output dist
 ```
 
 脚本只收集 Git 跟踪文件。打包前提交所需文件，并检查 `git status`。
@@ -27,9 +27,9 @@ python3 scripts/package_release.py --version v1.3.1 --output dist
 工作流使用仓库自带的 `GITHUB_TOKEN`，不需要额外上传访问令牌。镜像地址：
 
 ```text
-ghcr.io/halestats/widget-harbor:1.3.1
+ghcr.io/halestats/widget-harbor:1.4.0
 ```
 
 镜像构建成功后，维护者需在 Packages 中确认包可见性。源码仓库公开不代表镜像已可匿名拉取。用户始终可以按 README 从源码构建，不依赖 GHCR。
 
-使用预构建镜像时，将 Compose 中 `build: .` 删除，`image:` 改为实际版本镜像，然后执行 pull 和 up。iStoreOS 使用两个 Compose 文件时，所有命令都要带上两个 `-f` 参数，避免误切换数据卷。
+使用预构建镜像时，将 Compose 中 `build: .` 删除，`image:` 改为实际版本镜像，然后执行 pull 和 up。使用两个 Compose 文件时，所有命令都要带上两个 `-f` 参数，避免误切换数据卷。

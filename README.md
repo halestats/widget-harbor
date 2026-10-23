@@ -17,7 +17,7 @@
 
 ## 快速开始
 
-当前稳定版 **v1.3.1**：[下载发行包](https://github.com/halestats/widget-harbor/releases/latest) · [iStoreOS 安装](docs/ISTOREOS-INSTALL.md) · [升级已有部署](docs/UPGRADE-1.3.1.md)。
+当前稳定版 **v1.4.0**：[下载发行包](https://github.com/halestats/widget-harbor/releases/latest) · [Linux 安装](docs/INSTALL.md) · [升级已有部署](docs/UPGRADE-1.4.md)。
 
 需要 Docker Engine 和 Docker Compose v2 或更新版本。下载本仓库后，在项目根目录执行：
 
@@ -69,8 +69,8 @@ docker compose ps
 
 ## 文档导航
 
-- [安装到 /mnt/nvme/tools](docs/ISTOREOS-INSTALL.md)
-- [iStoreOS + WireGuard 部署](docs/ISTOREOS.md)
+- [Linux / Docker 安装](docs/INSTALL.md)
+- [Linux 部署](docs/LINUX.md)
 - [Docker / NAS / HTTPS / 更新与备份](docs/DEPLOYMENT.md)
 - [GitHub 发布、Actions 和 GHCR 镜像](docs/GITHUB.md)
 - [接口与订阅格式](docs/API.md)
@@ -115,8 +115,12 @@ node tests/test_ui.cjs       # 前端逻辑回归，需要 Node.js
 
 本仓库原创代码使用 [MIT License](LICENSE)。第三方模块与资源仍适用各自的许可；详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
+## 图片、分类与排序
+
+合集图标和文件夹封面独立存放在数据目录的 `images/` 中，远程图片会缓存。资源文件支持命名文件夹、封面和批量移动；删除分类保留文件。模块库、合集和资源均支持服务器持久化的自定义排序。
+
 ## 版本与同步规则
 
-v1.3.1 已经包含此前所有功能。填写远程订阅来源并保存后，刷新会同步上游名称、描述、图标和成员，合集链接标识保持不变；未提供的字段保留本地值。自建合集刷新选中的远程模块，保留本地上传内容。每天刷新是距上次尝试满 24 小时后执行，容器需持续运行。
+v1.4.0 已经包含此前所有功能。填写远程订阅来源并保存后，刷新会同步上游名称、描述、图标和成员，合集链接标识保持不变；未提供的字段保留本地值。自建合集刷新选中的远程模块，保留本地上传内容。每天刷新是距上次尝试满 24 小时后执行，容器需持续运行。
 
-详情见 [更新日志](CHANGELOG.md) 与 [升级及刷新规则](docs/UPGRADE-1.3.1.md)。
+详情见 [更新日志](CHANGELOG.md) 与 [升级及刷新规则](docs/UPGRADE-1.4.md)。

@@ -2,8 +2,9 @@
 const $ = s => document.querySelector(s);
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const collapsedGroups=new Set();
-let listMode=localStorage.getItem('harbor-view')||'grid', sortMode='updated', selectedFiles=new Set(), importTimer;
+let listMode=localStorage.getItem('harbor-view')||'grid', sortMode=localStorage.getItem('harbor-sort')||'updated', selectedFiles=new Set(), importTimer;
 let state = {modules:[], collections:[], site_url:''}, page = 'modules', filter = 'all', submitDialog, toastTimer;
+let currentFolder='';
 const names = {modules:'模块库', collections:'订阅合集', assets:'资源文件', settings:'设置与备份'};
 const sizes = n => n < 1048576 ? `${(n/1024).toFixed(1)} KB` : `${(n/1048576).toFixed(1)} MB`;
 const rawUrl = m => `${state.site_url}/api/modules/${m.id}/raw`;
@@ -30,7 +31,7 @@ function moduleCard(m) {
 function collectionCard(c) {
   const ms=c.module_ids.map(id=>state.modules.find(m=>m.id===id)).filter(Boolean);
   const fwd=ms.filter(m=>m.platform!=='rex').length, rex=ms.filter(m=>m.platform!=='forward').length;
-  return `<article class="card"><div class="card-top"><div class="module-icon">${c.icon?`<img src="${esc(c.icon.startsWith(state.site_url+'/')?c.icon.slice(state.site_url.length):c.icon)}" alt="合集图标">`:'▤'}</div><span class="badge neutral">${c.origin==='imported'?'导入':'自建'} · ${ms.length} 个模块</span></div><h3>${esc(c.title)}</h3><p>${esc(c.description||'为喜欢的模块留一个位置。')}</p><div class="meta"><span>Forward ${fwd}</span><span>·</span><span>Rex ${rex}</span><span>/${esc(c.slug)}</span></div><div class="card-bottom"><button class="link" data-action="copy-fwd" data-id="${esc(c.slug)}">.fwd ↗</button><button class="link" data-action="copy-rex" data-id="${esc(c.slug)}">.rex ↗</button><a class="link" href="rex://widget?url=${encodeURIComponent(subUrl(c,'rex'))}">+ Rex</a><button data-action="refresh-collection" data-id="${esc(c.slug)}">刷新</button><button data-action="edit-collection" data-id="${esc(c.slug)}">编辑</button><button class="end danger" data-action="delete-collection" data-id="${esc(c.slug)}">删除</button></div></article>`;
+  return `<article class="card"><div class="card-top"><div class="module-icon">${c.icon?`<img src="${esc(c.icon_display||c.icon)}" alt="合集图标">`:'▤'}</div><span class="badge neutral">${c.origin==='imported'?'导入':'自建'} · ${ms.length} 个模块</span></div><h3>${esc(c.title)}</h3><p>${esc(c.description||'为喜欢的模块留一个位置。')}</p><div class="meta"><span>Forward ${fwd}</span><span>·</span><span>Rex ${rex}</span><span>/${esc(c.slug)}</span></div><div class="card-bottom"><button class="link" data-action="copy-fwd" data-id="${esc(c.slug)}">.fwd ↗</button><button class="link" data-action="copy-rex" data-id="${esc(c.slug)}">.rex ↗</button><a class="link" href="rex://widget?url=${encodeURIComponent(subUrl(c,'rex'))}">+ Rex</a><button data-action="refresh-collection" data-id="${esc(c.slug)}">刷新</button><button data-action="edit-collection" data-id="${esc(c.slug)}">编辑</button><button class="end danger" data-action="delete-collection" data-id="${esc(c.slug)}">删除</button></div></article>`;
 }
 function render() {
   const modules=state.modules.filter(m=>m.kind==='module');
@@ -42,24 +43,31 @@ function render() {
   $('#stats').innerHTML=[['<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg>','托管模块',modules.length],['<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="8" width="14" height="13" rx="2"/><path d="M8 3h8M6 5.5h12M9 13h6M9 17h4"/></svg>','订阅合集',state.collections.length],['⇄','支持客户端','2'],['<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>','已用空间',sizes(state.modules.reduce((s,m)=>s+m.size,0))]].map(([icon,label,n])=>`<div class="stat"><div class="stat-icon">${icon}</div><div><small>${label}</small><strong>${n}</strong></div></div>`).join('');
   $('#hero').hidden=page!=='modules'; $('#toolbar').hidden=page==='settings'; $('.tabs').hidden=page!=='modules'; $('#settings').hidden=page!=='settings'; $('#listing').hidden=page==='settings'; $('.section-title').hidden=page==='settings';
   $('#list-controls').hidden=page==='settings';
+  $('#folder-bar').hidden=page!=='assets';
   $('#listing').classList.remove('list-mode');
   if(page==='settings') { renderSettings(); return; }
+  renderFolders();
   const q=$('#search').value.toLowerCase();
   let items=page==='collections'?state.collections:state.modules.filter(m=>m.kind===(page==='assets'?'asset':'module'));
+  if(page==='assets')items=items.filter(m=>(state.locations?.[m.id]||'')===currentFolder);
   items=items.filter(m=>[m.title,m.author,m.filename,m.description,m.slug].some(v=>String(v||'').toLowerCase().includes(q)));
   if(page==='modules'&&filter!=='all') items=items.filter(m=>m.platform===filter||m.platform==='both');
   $('#list-title').textContent=page==='modules'?(filter==='all'?'全部模块':filter==='rex'?'Rex 模块':'Forward 模块'):names[page];
-  items.sort((a,b)=>sortMode==='name'?a.title.localeCompare(b.title,'zh-CN'):sortMode==='size'?(b.size||0)-(a.size||0):(b.updated_at||0)-(a.updated_at||0));
+  const order=state.orders?.[page]||[];
+  const rank=m=>{const i=order.indexOf(m.id||m.slug);return i<0?Number.MAX_SAFE_INTEGER:i;};
+  items.sort((a,b)=>sortMode==='custom'?rank(a)-rank(b):sortMode==='name'?a.title.localeCompare(b.title,'zh-CN'):sortMode==='size'?(page==='collections'?b.module_ids.length-a.module_ids.length:(b.size||0)-(a.size||0)):(b.updated_at||0)-(a.updated_at||0));
   $('#result-count').textContent=`${items.length} ${page==='collections'?'个合集':'个文件'}`;
   $('#listing').innerHTML=items.length?items.map(page==='collections'?collectionCard:moduleCard).join(''):`<div class="empty"><div class="empty-symbol">${q?'⌕':'↥'}</div><h3>${q?'没有匹配的内容':'从第一个'+(page==='collections'?'合集':'文件')+'开始'}</h3><p>${q?'试试其他关键词，或切换平台筛选。':'上传自己的模块，或粘贴远程链接导入。所有内容由你管理，随时备份和迁移。'}</p>${q?'':`<button class="primary" data-action="${page==='collections'?'new-collection':'upload'}">${page==='collections'?'创建合集':'上传文件'}</button><button class="secondary" data-action="import">链接导入</button>`}</div>`;
   listControls(items);
 }
 function listControls(items) {
   const files=page!=='collections';
-  $('#list-controls').innerHTML=files?`<select id="sort-mode" aria-label="排序方式"><option value="updated">最近更新</option><option value="name">名称排序</option><option value="size">文件大小</option></select><button class="secondary" id="view-toggle">${listMode==='grid'?'列表模式':'卡片模式'}</button><button class="secondary" id="select-visible">${items.length&&items.every(m=>selectedFiles.has(m.id))?'取消全选':'全选'}</button><button class="secondary" id="batch-edit">批量编辑</button><button class="secondary danger" id="batch-delete">删除所选 (${selectedFiles.size})</button>`:'';
-  if(!files)return;
+  $('#list-controls').innerHTML=`<select id="sort-mode" aria-label="排序方式"><option value="updated">${files?'最近更新':'最近创建'}</option><option value="name">名称排序</option><option value="size">${files?'文件大小':'模块数量'}</option><option value="custom">自定义排序</option></select>${files?`<button class="secondary" id="view-toggle">${listMode==='grid'?'列表模式':'卡片模式'}</button><button class="secondary" id="select-visible">${items.length&&items.every(m=>selectedFiles.has(m.id))?'取消全选':'全选'}</button><button class="secondary" id="batch-edit">批量编辑</button><button class="secondary danger" id="batch-delete">删除所选 (${selectedFiles.size})</button>${page==='assets'?'<button class="secondary" id="move-files">移动到文件夹</button>':''}`:''}`;
   $('#sort-mode').value=sortMode;
-  $('#sort-mode').onchange=e=>{sortMode=e.target.value;render();};
+  $('#sort-mode').onchange=e=>{sortMode=e.target.value;localStorage.setItem('harbor-sort',sortMode);render();};
+  if(sortMode==='custom')document.querySelectorAll('#listing .card').forEach((card,index)=>{const bar=document.createElement('div');bar.className='order-actions';bar.innerHTML=`<button class="secondary" ${index===0?'disabled':''} aria-label="上移">↑ 上移</button><button class="secondary" ${index===items.length-1?'disabled':''} aria-label="下移">↓ 下移</button>`;bar.querySelectorAll('button').forEach((b,n)=>b.onclick=async()=>{const ids=items.map(m=>m.id||m.slug);const target=index+(n===0?-1:1);[ids[index],ids[target]]=[ids[target],ids[index]];try{await api('/api/order','PUT',{scope:page,ids});await reload();}catch(e){toast(e.message);}});card.append(bar);});
+  if(!files)return;
+  if(page==='assets')$('#move-files').onclick=moveFiles;
   $('#view-toggle').onclick=()=>{listMode=listMode==='grid'?'list':'grid';localStorage.setItem('harbor-view',listMode);render();};
   $('#select-visible').onclick=()=>{const all=items.every(m=>selectedFiles.has(m.id));items.forEach(m=>all?selectedFiles.delete(m.id):selectedFiles.add(m.id));render();};
   const batch=action=>{
@@ -69,7 +77,7 @@ function listControls(items) {
   };
   $('#batch-edit').onclick=()=>batch('platform');$('#batch-delete').onclick=()=>batch('delete');
   $('#listing').classList.toggle('list-mode',listMode==='list');
-  if(listMode==='list' && items.length){
+  if(listMode==='list' && items.length && sortMode!=='custom'){
     const groups=new Map();
     items.forEach(m=>{let group='本地上传';try{const u=new URL(m.source_url);group=m.source_group||u.origin;}catch{} if(!groups.has(group))groups.set(group,[]);groups.get(group).push(m);});
     $('#listing').innerHTML=[...groups].map(([key,ms])=>`<details class="source-group" data-source="${esc(key)}" ${collapsedGroups.has(key)?'':'open'}><summary><span>${esc(key)} · ${ms.length} 个文件</span><button class="secondary group-select" data-group="${esc(key)}">${ms.every(m=>selectedFiles.has(m.id))?'取消全选':'全选'}</button></summary>${ms.map(moduleCard).join('')}</details>`).join('');
@@ -142,7 +150,7 @@ function upload() {
     for(const file of files) {
       const data=await fileData(file);
       const manifest=!asset&&/\.(fwd|rex)$/i.test(file.name);
-      await api(manifest?'/api/import':'/api/modules','POST',{filename:file.name,data,kind:asset?'asset':'module',platform:form.elements.platform?.value||'both'});
+      await api(manifest?'/api/import':'/api/modules','POST',{filename:file.name,data,kind:asset?'asset':'module',platform:form.elements.platform?.value||'both',folder_id:asset?currentFolder:''});
     }
     await reload(); toast(`已导入 ${files.length} 个文件`);
   }, '上传并保存');
@@ -158,14 +166,14 @@ function importLink() {
 function editCollection(c) {
   let refreshAfterSave=false;
   const modules=state.modules.filter(m=>m.kind==='module');
-  modal(c?'编辑订阅合集':'创建订阅合集', `<div class="form-row"><label>合集名称<input name="title" value="${esc(c?.title||'')}" required maxlength="200"></label><label>链接标识<input name="slug" pattern="[A-Za-z0-9][A-Za-z0-9_-]{0,63}" value="${esc(c?.slug||'')}" placeholder="my-widgets" ${c?'readonly':''} required></label></div><label>远程订阅来源（自建合集可留空）<input name="source_url" type="url" value="${esc(c?.source_url||'')}"></label><label><input name="auto_refresh" type="checkbox" ${c?.auto_refresh?'checked':''}> 每天自动刷新一次</label><p class="hint">填写远程来源后，同步上游名称、描述、图标及成员，本地修改会被上游覆盖；自建合集刷新其中有远程来源的模块，本地文件保留。${c?.error?'上次刷新：'+esc(c.error):c?.last_success?'上次成功：'+new Date(c.last_success*1000).toLocaleString():''}</p>${c?'<button type="button" id="save-and-refresh" class="secondary">保存并刷新</button>':''}<label>描述<textarea name="description" maxlength="2000">${esc(c?.description||'')}</textarea></label><label>图标 URL（可选）<input name="icon" type="url" value="${esc(c?.icon||'')}"></label><label>或上传本地图标<input name="local_icon" type="file" accept="image/png,image/jpeg,image/webp"></label><div class="picker-heading"><span>选择模块（最多 100 个）</span><span id="selection-count" role="status"></span></div><div class="picker-actions"><label><input id="select-all" type="checkbox"> 全选</label><button type="button" class="secondary" id="clear-selection">取消全选</button></div><div class="module-picker">${modules.length?modules.map(m=>`<label><input type="checkbox" name="module_ids" value="${m.id}" ${c?.module_ids.includes(m.id)?'checked':''}>${esc(m.title)}<span>${esc(m.platform)}</span></label>`).join(''):'还没有模块，请先上传模块。'}</div><p class="hint">保存后获得 .fwd 与 .rex 两条订阅链接。每条链接仅包含对应平台的模块。</p>`, async form=>{
+  modal(c?'编辑订阅合集':'创建订阅合集', `<div class="form-row"><label>合集名称<input name="title" value="${esc(c?.title||'')}" required maxlength="200"></label><label>链接标识<input name="slug" pattern="[A-Za-z0-9][A-Za-z0-9_-]{0,63}" value="${esc(c?.slug||'')}" placeholder="my-widgets" ${c?'readonly':''} required></label></div><label>远程订阅来源（自建合集可留空）<input name="source_url" type="url" value="${esc(c?.source_url||'')}"></label><label><input name="auto_refresh" type="checkbox" ${c?.auto_refresh?'checked':''}> 每天自动刷新一次</label><p class="hint">填写远程来源后，同步上游名称、描述、图标及成员，本地修改会被上游覆盖；自建合集刷新其中有远程来源的模块，本地文件保留。${c?.error?'上次刷新：'+esc(c.error):c?.last_success?'上次成功：'+new Date(c.last_success*1000).toLocaleString():''}</p>${c?'<button type="button" id="save-and-refresh" class="secondary">保存并刷新</button>':''}<label>描述<textarea name="description" maxlength="2000">${esc(c?.description||'')}</textarea></label><label>图标 URL（可选）<input name="icon" placeholder="https://… 或已上传图片路径" value="${esc(c?.icon||'')}"></label><label>或上传本地图标<input name="local_icon" type="file" accept="image/png,image/jpeg,image/webp"></label><div class="picker-heading"><span>选择模块（最多 100 个）</span><span id="selection-count" role="status"></span></div><div class="picker-actions"><label><input id="select-all" type="checkbox"> 全选</label><button type="button" class="secondary" id="clear-selection">取消全选</button></div><div class="module-picker">${modules.length?modules.map(m=>`<label><input type="checkbox" name="module_ids" value="${m.id}" ${c?.module_ids.includes(m.id)?'checked':''}>${esc(m.title)}<span>${esc(m.platform)}</span></label>`).join(''):'还没有模块，请先上传模块。'}</div><p class="hint">保存后获得 .fwd 与 .rex 两条订阅链接。每条链接仅包含对应平台的模块。</p>`, async form=>{
     const data=Object.fromEntries(new FormData(form));
     const selected=new FormData(form).getAll('module_ids');
     if(selected.length>100) throw new Error('每个合集最多选择 100 个模块');
     data.auto_refresh=form.elements.auto_refresh.checked;
     delete data.local_icon;
     const iconFile=form.elements.local_icon.files[0];
-    if(iconFile){await imageData(iconFile);const r=await api('/api/modules','POST',{filename:iconFile.name,data:await fileData(iconFile),kind:'asset'});data.icon=`${state.site_url}/api/modules/${r.id}/raw`;}
+    if(iconFile){await imageData(iconFile);const r=await api('/api/images','POST',{data:await fileData(iconFile)});data.icon=r.url;}
     data.module_ids=c?[...c.module_ids.filter(id=>selected.includes(id)),...selected.filter(id=>!c.module_ids.includes(id))]:selected;
     await api('/api/collections',c?'PUT':'POST',data);page='collections';await reload();
     if(refreshAfterSave){await api(`/api/collections/${encodeURIComponent(data.slug)}/refresh`,'POST',{});clearTimeout(importTimer);monitorImport();toast('合集已保存，开始刷新');}else toast('合集已保存');
@@ -206,7 +214,7 @@ $('#dialog-form').addEventListener('submit',async e=>{e.preventDefault();const b
 $('#search').addEventListener('input',render);
 document.addEventListener('click',async e=>{
   const b=e.target.closest('button');if(!b)return;
-  if(b.dataset.page){page=b.dataset.page;$('#search').value='';render();return;}
+  if(b.dataset.page){selectedFiles.clear();page=b.dataset.page;$('#search').value='';render();return;}
   if(b.dataset.filter){filter=b.dataset.filter;document.querySelectorAll('[data-filter]').forEach(x=>x.classList.toggle('selected',x===b));render();return;}
   const action=b.dataset.action,id=b.dataset.id,m=state.modules.find(x=>x.id===id),c=state.collections.find(x=>x.slug===id);
   if(!action)return;
@@ -215,6 +223,10 @@ document.addEventListener('click',async e=>{
     if(action==='close')$('#dialog').close();
     if(action==='logout'){await api('/api/logout','POST',{});showLogin();}
     if(action==='upload')upload();
+    if(action==='new-folder')editFolder();
+    if(action==='edit-folder')editFolder(state.folders.find(f=>f.id===id));
+    if(action==='open-folder'){currentFolder=id||'';selectedFiles.clear();render();}
+    if(action==='delete-folder')modal('删除文件夹','<p>只删除分类，文件会移回资源根目录。</p>',async()=>{await api('/api/folders/'+id,'DELETE');if(currentFolder===id)currentFolder='';await reload();});
     if(action==='import')importLink();
     if(action==='new-collection')editCollection();
     if(action==='refresh-collection'){await api(`/api/collections/${encodeURIComponent(id)}/refresh`,'POST',{});clearTimeout(importTimer);monitorImport();toast('合集刷新已开始');}
@@ -242,3 +254,21 @@ $('#cancel-import').onclick=async()=>{await api('/api/import/cancel','POST',{});
 api('/api/session').then(s=>{if(s.authenticated)monitorImport();});
 
 $('.section-title').append($('#list-controls'));
+
+function folderOptions(selected=''){
+  return `<option value="">资源根目录</option>${(state.folders||[]).map(f=>`<option value="${f.id}" ${selected===f.id?'selected':''}>${esc(f.name)}</option>`).join('')}`;
+}
+function renderFolders(){
+  const bar=$('#folder-bar');bar.hidden=page!=='assets';if(page!=='assets')return;
+  if(currentFolder&&!state.folders?.some(f=>f.id===currentFolder))currentFolder='';
+  const current=state.folders?.find(f=>f.id===currentFolder);
+  bar.innerHTML=`<div class="folder-toolbar"><button class="secondary" data-action="open-folder">资源根目录</button><strong>${current?' / '+esc(current.name):''}</strong><button class="secondary" data-action="new-folder">＋ 新建文件夹</button></div>${current?'':`<div class="folder-grid">${(state.folders||[]).map(f=>`<article class="folder-card"><button class="folder-open" data-action="open-folder" data-id="${f.id}">${f.icon?`<img src="${esc(f.icon_display||f.icon)}" alt="文件夹封面">`:'<span class="folder-symbol">▱</span>'}<strong>${esc(f.name)}</strong></button><div><button class="secondary" data-action="edit-folder" data-id="${f.id}">编辑</button> <button class="secondary danger" data-action="delete-folder" data-id="${f.id}">删除分类</button></div></article>`).join('')}</div>`}`;
+}
+function editFolder(folder){
+ modal(folder?'编辑文件夹':'新建文件夹',`<label>名称<input name="name" required maxlength="100" value="${esc(folder?.name||'')}"></label><label>封面图片 URL<input name="icon" value="${esc(folder?.icon||'')}" placeholder="https://…"></label><label>或上传封面<input name="image" type="file" accept="image/png,image/jpeg,image/webp"></label><p class="hint">图片独立缓存，不会出现在资源文件中。清空 URL 可恢复默认封面。</p>`,async form=>{const data={name:form.elements.name.value,icon:form.elements.icon.value};const file=form.elements.image.files[0];if(file){await imageData(file);data.icon=(await api('/api/images','POST',{data:await fileData(file)})).url;}await api('/api/folders'+(folder?'/'+folder.id:''),folder?'PUT':'POST',data);await reload();});
+}
+function moveFiles(){
+ const ids=[...selectedFiles].filter(id=>state.modules.some(m=>m.id===id&&m.kind==='asset'));
+ if(!ids.length){toast('请先选择资源文件');return;}
+ modal('移动资源文件',`<label>目标文件夹<select name="folder">${folderOptions(currentFolder)}</select></label><p>移动 ${ids.length} 个文件，原直链保持不变。</p>`,async form=>{await api('/api/assets/move','POST',{ids,folder_id:form.elements.folder.value});selectedFiles.clear();await reload();});
+}
