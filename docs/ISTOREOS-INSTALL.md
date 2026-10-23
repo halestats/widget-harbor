@@ -12,13 +12,17 @@
 
 ## 1. 上传安装包
 
+从 [Release 页面](https://github.com/halestats/widget-harbor/releases/latest) 下载带版本号的 `widget-harbor-v1.3.1.tar.gz`。不要使用 GitHub 自动生成的 Source code 包，其根目录名称不同。
+
+早期文档中的 `widget-harbor-istoreos.tar.gz` 是同类安装包的别名；如照旧文档执行，可重命名下载文件，或将命令中的包名改为实际文件名。
+
 在已经登录的 iStoreOS 终端执行：
 
 ```sh
 mkdir -p /mnt/nvme/tools
 ```
 
-用电脑上的 SFTP/SCP 或已有文件管理工具，把 `widget-harbor-istoreos.tar.gz` 上传到 `/mnt/nvme/tools/`。电脑如使用 scp，OpenWrt 系统未安装 SFTP 子系统时可使用 `scp -O` 的旧 SCP 协议。密码在你自己的终端输入，不要发送到聊天中。
+用电脑上的 SFTP/SCP 或已有文件管理工具，把 `widget-harbor-v1.3.1.tar.gz` 上传到 `/mnt/nvme/tools/`。电脑如使用 scp，OpenWrt 系统未安装 SFTP 子系统时可使用 `scp -O` 的旧 SCP 协议。密码在你自己的终端输入，不要发送到聊天中。
 
 ## 2. 解压并安装
 
@@ -29,7 +33,7 @@ cd /mnt/nvme/tools
 if [ -e widget-harbor ] || [ -L widget-harbor ]; then
     echo 'widget-harbor 目录已存在，请先核对内容，不要直接覆盖。'
 else
-    tar -xzf widget-harbor-istoreos.tar.gz && (
+    tar -xzf widget-harbor-v1.3.1.tar.gz && (
         cd widget-harbor && ISTOREOS_IP=192.168.1.1 sh scripts/install-istoreos.sh
     )
 fi
