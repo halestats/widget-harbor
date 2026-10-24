@@ -227,6 +227,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send(200, module['content'], mime, headers)
 
     def subscription(self, slug, platform):
+        if self.command == 'GET':
+            self.server.scheduler.refresh_for_player(slug)
         with self.server.store.connect() as db:
             row = db.execute('SELECT * FROM collections WHERE slug=?', (slug,)).fetchone()
             if not row:

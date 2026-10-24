@@ -41,6 +41,32 @@ class Scheduler(threading.Thread):
             self.server.cancel_import.clear()
             self.run_files(ids)
 
+    def refresh_for_player(self, slug, wait_seconds=8):
+        """Bounded read-through refresh; retain the atomic cached snapshot on failure."""
+        if not self.server.import_lock.acquire(blocking=False):
+            return
+        handed_off = False
+        try:
+            with self.server.store.connect() as db:
+                collection = next((c for c in self.server.store.collections(db) if c['slug'] == slug), None)
+                if not collection:
+                    return
+                remote = collection['source_url'] or db.execute(
+                    "SELECT 1 FROM modules JOIN members ON module_id=id WHERE slug=? AND source_url!='' LIMIT 1",
+                    (slug,)).fetchone()
+                if not remote or collection['last_attempt'] > int(time.time()) - 60:
+                    return
+                # Persist the cooldown before starting work, including failed attempts.
+                db.execute('UPDATE collection_sync SET last_attempt=? WHERE slug=?', (int(time.time()), slug))
+            self.server.cancel_import.clear()
+            worker = threading.Thread(target=self.run_job, args=(slug,), daemon=True)
+            worker.start()
+            handed_off = True
+            worker.join(wait_seconds)
+        finally:
+            if not handed_off:
+                self.server.import_lock.release()
+
     def run_files(self, ids):
         store=self.server.store
         with self.server.job_lock:self.server.job={'id':secrets.token_hex(16),'status':'running','done':0,'total':len(ids)}
