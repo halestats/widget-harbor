@@ -35,6 +35,53 @@ class Scheduler(threading.Thread):
             self.server.cancel_import.clear()
             self.run_job(row['slug'])
 
+        with self.server.store.connect() as db:
+            ids=[r[0] for r in db.execute("SELECT module_id FROM file_sync JOIN modules ON id=module_id WHERE auto_refresh=1 AND source_url!='' AND last_attempt<? LIMIT 500",(int(time.time())-86400,))]
+        if ids and not self.stop.is_set() and self.server.import_lock.acquire(blocking=False):
+            self.server.cancel_import.clear()
+            self.run_files(ids)
+
+    def run_files(self, ids):
+        store=self.server.store
+        with self.server.job_lock:self.server.job={'id':secrets.token_hex(16),'status':'running','done':0,'total':len(ids)}
+        result={'success':0,'skipped':0,'failed':0,'errors':[]}
+        deadline=time.monotonic()+300
+        total_bytes=0
+        try:
+            for index,ident in enumerate(ids):
+                if self.stop.is_set() or self.server.cancel_import.is_set():raise Problem('刷新已取消')
+                if time.monotonic()>deadline:raise Problem('批量刷新超时，未处理的文件保持原样')
+                try:
+                    with store.connect() as db:
+                        old=store.get_module(db,ident)
+                        if not old['source_url']:
+                            result['skipped']+=1
+                            continue
+                        db.execute('INSERT OR IGNORE INTO file_sync(module_id) VALUES (?)',(ident,))
+                        db.execute('UPDATE file_sync SET last_attempt=? WHERE module_id=?',(int(time.time()),ident))
+                    data,_=fetch(old['source_url']);total_bytes+=len(data)
+                    if total_bytes>50*1024*1024:raise Problem('批量刷新超过 50 MiB')
+                    updated=prepare_module({'data':base64.b64encode(data).decode()},old)
+                    if self.server.cancel_import.is_set():raise Problem('刷新已取消')
+                    with store.connect() as db:
+                        db.execute('BEGIN IMMEDIATE')
+                        if store.get_module(db,ident)!=old:raise Problem('文件在刷新期间被修改，请重试',409)
+                        store.save_module(db,updated)
+                        db.execute("UPDATE file_sync SET last_success=?,error='' WHERE module_id=?",(int(time.time()),ident))
+                    result['success']+=1
+                except Exception as exc:
+                    message=str(exc) if isinstance(exc,Problem) else '刷新失败，请查看服务日志'
+                    result['failed']+=1;result['errors'].append({'id':ident,'message':message})
+                    with store.connect() as db:db.execute('UPDATE file_sync SET error=? WHERE module_id=?',(message,ident))
+                finally:
+                    with self.server.job_lock:self.server.job.update(done=index+1,total=len(ids),result=result)
+                if total_bytes>50*1024*1024:raise Problem('批量刷新超过 50 MiB，未处理的文件保持原样')
+            if self.stop.is_set() or self.server.cancel_import.is_set():raise Problem('刷新已取消')
+            with self.server.job_lock:self.server.job.update(status='complete',result=result)
+        except Exception as exc:
+            with self.server.job_lock:self.server.job.update(status='cancelled' if self.server.cancel_import.is_set() else 'failed',error=str(exc),result=result)
+        finally:self.server.import_lock.release()
+
     def run_job(self, slug):
         try:
             with self.server.job_lock:

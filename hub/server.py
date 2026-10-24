@@ -404,12 +404,25 @@ class Handler(BaseHTTPRequestHandler):
             ids = obj.get('ids')
             if not isinstance(ids, list) or not 1 <= len(ids) <= 500 or not all(isinstance(i,str) for i in ids):
                 raise Problem('请选择 1–500 个文件')
+            ids=list(dict.fromkeys(ids))
+            with store.connect() as db:
+                for ident in ids:store.get_module(db,ident)
+            if obj.get('action')=='refresh':
+                if not self.server.import_lock.acquire(blocking=False):raise Problem('已有导入或刷新正在进行，请稍后重试',409)
+                self.server.cancel_import.clear()
+                with self.server.job_lock:self.server.job={'id':secrets.token_hex(16),'status':'running','done':0,'total':len(ids)}
+                threading.Thread(target=self.server.scheduler.run_files,args=(ids,),daemon=True).start()
+                return self.send(202,{'ok':True})
             with store.connect() as db:
                 for ident in ids:
                     store.get_module(db, ident)
                 for ident in ids:
                     if obj.get('action') == 'delete':
                         db.execute('DELETE FROM modules WHERE id=?', (ident,))
+                    elif obj.get('action') == 'auto_refresh' and type(obj.get('enabled')) is bool:
+                        old=store.get_module(db,ident)
+                        if old['source_url'] or not obj['enabled']:
+                            db.execute('INSERT INTO file_sync(module_id,auto_refresh) VALUES (?,?) ON CONFLICT(module_id) DO UPDATE SET auto_refresh=excluded.auto_refresh',(ident,int(obj['enabled'])))
                     elif obj.get('action') == 'platform' and obj.get('platform') in ('both','rex','forward'):
                         db.execute('UPDATE modules SET platform=? WHERE id=? AND kind="module"', (obj['platform'], ident))
                     else:
@@ -433,6 +446,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/api/state' and method == 'GET':
             with store.connect() as db:
                 modules = [{k:v for k,v in dict(r).items() if k != 'content'} for r in db.execute('SELECT * FROM modules WHERE id NOT IN (SELECT module_id FROM legacy_icons) ORDER BY updated_at DESC, rowid DESC')]
+                schedules={r['module_id']:dict(r) for r in db.execute('SELECT * FROM file_sync')}
+                for m in modules:m['refresh']=schedules.get(m['id'],{})
                 collections = store.collections(db)
                 extra=catalog.state(db)
                 for c in collections:c['icon_display']=catalog.display(db,c['icon'])
@@ -504,6 +519,9 @@ class Handler(BaseHTTPRequestHandler):
                 if current['sha256'] != old['sha256']:
                     raise Problem('文件已被其他操作更新，请刷新页面后重试', 409)
                 store.save_module(db, updated)
+                if method=='PUT' and 'auto_refresh' in obj:
+                    if type(obj['auto_refresh']) is not bool:raise Problem('自动刷新设置无效')
+                    db.execute('INSERT INTO file_sync(module_id,auto_refresh) VALUES (?,?) ON CONFLICT(module_id) DO UPDATE SET auto_refresh=excluded.auto_refresh',(ident,int(obj['auto_refresh'] and bool(updated['source_url']))))
             return self.send(200, {'ok':True})
         if path == '/api/collections' and method in ('POST','PUT'):
             obj = self.body()

@@ -138,6 +138,7 @@ class Store:
               source_url TEXT NOT NULL DEFAULT '', auto_refresh INTEGER NOT NULL DEFAULT 0,
               last_attempt INTEGER NOT NULL DEFAULT 0, last_success INTEGER NOT NULL DEFAULT 0,
               error TEXT NOT NULL DEFAULT '', origin TEXT NOT NULL DEFAULT 'custom');
+            CREATE TABLE IF NOT EXISTS file_sync (module_id TEXT PRIMARY KEY REFERENCES modules(id) ON DELETE CASCADE, auto_refresh INTEGER NOT NULL DEFAULT 0, last_attempt INTEGER NOT NULL DEFAULT 0, last_success INTEGER NOT NULL DEFAULT 0, error TEXT NOT NULL DEFAULT '');
             CREATE TABLE IF NOT EXISTS app_migrations (name TEXT PRIMARY KEY);
             PRAGMA user_version=1;
             ''')
@@ -246,7 +247,7 @@ class Store:
                 item = dict(row)
                 item['data'] = base64.b64encode(item.pop('content')).decode()
                 modules.append(item)
-            return dict(format='widget-harbor', schema=2, modules=modules, collections=self.collections(db),catalog=self.catalog.export(db))
+            return dict(format='widget-harbor', schema=2, modules=modules, collections=self.collections(db),catalog=self.catalog.export(db),file_sync=[dict(r) for r in db.execute('SELECT * FROM file_sync')])
 
     def restore(self, obj):
         if not isinstance(obj, dict) or obj.get('format') != 'widget-harbor' or obj.get('schema') not in (1,2):
@@ -279,5 +280,13 @@ class Store:
                     raise Problem('备份刷新时间无效')
                 db.execute('UPDATE collection_sync SET last_attempt=?,last_success=?,error=? WHERE slug=?', (*stamps,text(collection.get('error',''),2000),slug))
 
+            schedules=obj.get('file_sync',[])
+            if not isinstance(schedules,list) or len(schedules)>10000:raise Problem('定时刷新备份无效')
+            for row in schedules:
+                if not isinstance(row,dict):raise Problem('定时刷新备份无效')
+                self.get_module(db,row.get('module_id'))
+                stamps=[row.get(k,0) for k in ('auto_refresh','last_attempt','last_success')]
+                if any(type(v) is not int or not 0<=v<=2**53 for v in stamps) or stamps[0] not in (0,1):raise Problem('定时刷新备份无效')
+                db.execute('INSERT INTO file_sync VALUES (?,?,?,?,?)',(row['module_id'],*stamps,text(row.get('error',''),2000)))
             self.catalog.restore(db,obj.get('catalog',{}))
             self.catalog.migrate_icons(db)

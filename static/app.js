@@ -56,17 +56,25 @@ function render() {
   const order=state.orders?.[page]||[];
   const rank=m=>{const i=order.indexOf(m.id||m.slug);return i<0?Number.MAX_SAFE_INTEGER:i;};
   items.sort((a,b)=>sortMode==='custom'?rank(a)-rank(b):sortMode==='name'?a.title.localeCompare(b.title,'zh-CN'):sortMode==='size'?(page==='collections'?b.module_ids.length-a.module_ids.length:(b.size||0)-(a.size||0)):(b.updated_at||0)-(a.updated_at||0));
+  const assetTotal=state.modules.filter(m=>m.kind==='asset').length;
   $('#result-count').textContent=`${items.length} ${page==='collections'?'个合集':'个文件'}`;
   $('#listing').innerHTML=items.length?items.map(page==='collections'?collectionCard:moduleCard).join(''):`<div class="empty"><div class="empty-symbol">${q?'⌕':'↥'}</div><h3>${q?'没有匹配的内容':'从第一个'+(page==='collections'?'合集':'文件')+'开始'}</h3><p>${q?'试试其他关键词，或切换平台筛选。':'上传自己的模块，或粘贴远程链接导入。所有内容由你管理，随时备份和迁移。'}</p>${q?'':`<button class="primary" data-action="${page==='collections'?'new-collection':'upload'}">${page==='collections'?'创建合集':'上传文件'}</button><button class="secondary" data-action="import">链接导入</button>`}</div>`;
+  if(page==='assets'&&!items.length&&!q){
+    if(assetEmptyKind(currentFolder,assetTotal)==='folders')$('#listing').innerHTML='<div class="empty"><h3>文件已归入文件夹</h3><p>打开上方文件夹查看和管理资源，或上传文件到根目录。</p></div>';
+    else if(assetEmptyKind(currentFolder,assetTotal)==='folder')$('#listing .empty h3').textContent='此文件夹暂无文件';
+  }
+  if(page==='assets')$('#result-count').textContent=`当前目录 ${items.length} 个 · 全部资源 ${assetTotal} 个`;
   listControls(items);
 }
 function listControls(items) {
   const files=page!=='collections';
-  $('#list-controls').innerHTML=`<select id="sort-mode" aria-label="排序方式"><option value="updated">${files?'最近更新':'最近创建'}</option><option value="name">名称排序</option><option value="size">${files?'文件大小':'模块数量'}</option><option value="custom">自定义排序</option></select>${files?`<button class="secondary" id="view-toggle">${listMode==='grid'?'列表模式':'卡片模式'}</button><button class="secondary" id="select-visible">${items.length&&items.every(m=>selectedFiles.has(m.id))?'取消全选':'全选'}</button><button class="secondary" id="batch-edit">批量编辑</button><button class="secondary danger" id="batch-delete">删除所选 (${selectedFiles.size})</button>${page==='assets'?'<button class="secondary" id="move-files">移动到文件夹</button>':''}`:''}`;
+  $('#list-controls').innerHTML=`<select id="sort-mode" aria-label="排序方式"><option value="updated">${files?'最近更新':'最近创建'}</option><option value="name">名称排序</option><option value="size">${files?'文件大小':'模块数量'}</option><option value="custom">自定义排序</option></select>${files?`<button class="secondary" id="view-toggle">${listMode==='grid'?'列表模式':'卡片模式'}</button><button class="secondary" id="select-visible">${items.length&&items.every(m=>selectedFiles.has(m.id))?'取消全选':'全选'}</button><button class="secondary" id="batch-edit">批量编辑</button><button class="secondary" id="batch-refresh">刷新所选</button><button class="secondary" id="batch-schedule">定时刷新</button><button class="secondary danger" id="batch-delete">删除所选 (${selectedFiles.size})</button>${page==='assets'?'<button class="secondary" id="move-files">移动到文件夹</button>':''}`:''}`;
   $('#sort-mode').value=sortMode;
   $('#sort-mode').onchange=e=>{sortMode=e.target.value;localStorage.setItem('harbor-sort',sortMode);render();};
   if(sortMode==='custom')document.querySelectorAll('#listing .card').forEach((card,index)=>{const bar=document.createElement('div');bar.className='order-actions';bar.innerHTML=`<button class="secondary" ${index===0?'disabled':''} aria-label="上移">↑ 上移</button><button class="secondary" ${index===items.length-1?'disabled':''} aria-label="下移">↓ 下移</button>`;bar.querySelectorAll('button').forEach((b,n)=>b.onclick=async()=>{const ids=items.map(m=>m.id||m.slug);const target=index+(n===0?-1:1);[ids[index],ids[target]]=[ids[target],ids[index]];try{await api('/api/order','PUT',{scope:page,ids});await reload();}catch(e){toast(e.message);}});card.append(bar);});
   if(!files)return;
+  $('#batch-refresh').onclick=()=>refreshFiles(false);
+  $('#batch-schedule').onclick=()=>refreshFiles(true);
   if(page==='assets')$('#move-files').onclick=moveFiles;
   $('#view-toggle').onclick=()=>{listMode=listMode==='grid'?'list':'grid';localStorage.setItem('harbor-view',listMode);render();};
   $('#select-visible').onclick=()=>{const all=items.every(m=>selectedFiles.has(m.id));items.forEach(m=>all?selectedFiles.delete(m.id):selectedFiles.add(m.id));render();};
@@ -111,12 +119,12 @@ async function monitorImport(){
     let dismissed='';try{dismissed=sessionStorage.getItem('harbor-dismissed-job');}catch{}
     const running=j.status==='running';
     $('#import-status').hidden=j.status==='idle'||(!running&&dismissed===visibleJob);
-    $('#import-message').textContent=running?`正在同步 ${j.done} / ${j.total||'…'}；关闭窗口不会停止任务`:j.status==='complete'?'同步完成':j.error||'同步已取消';
+    $('#import-message').textContent=running?`正在同步 ${j.done} / ${j.total||'…'}；关闭窗口不会停止任务`:j.status==='complete'?(j.result&&'success' in j.result?`刷新完成：成功 ${j.result.success}，跳过 ${j.result.skipped}，失败 ${j.result.failed}`:'同步完成'):j.error||'同步已取消';
     $('#cancel-import').hidden=!running;
     $('#dismiss-import').hidden=running;
     if(running){importTimer=setTimeout(monitorImport,1500);}
     else if(j.status==='complete'&&dismissed!==visibleJob){
-      dismissTimer=setTimeout(dismissImport,5000);
+      if(!j.result?.failed)dismissTimer=setTimeout(dismissImport,5000);
       await reload();
     }
   }catch(err){
@@ -158,7 +166,7 @@ function upload() {
   zone.addEventListener('drop',e=>{e.preventDefault();zone.classList.remove('drag');zone.querySelector('input').files=e.dataTransfer.files;});
 }
 function importLink() {
-  modal('从链接导入', `<label>远程文件 URL<input name="url" type="url" placeholder="https://example.com/widget.js" required></label><label>导入类型<select name="type"><option value="auto">自动识别模块 / 订阅</option><option value="manifest">合集订阅（无扩展名链接选择此项）</option><option value="asset">资源文件</option></select></label>${platformField()}<p class="hint">支持公开 HTTP / HTTPS 地址（80、443 端口）。订阅内最多 50 个模块；导入成功后全部保存到本站。GitHub 文件请使用 Raw 链接。</p>`, async form=>{
+  modal('从链接导入', `<label>远程文件 URL<input name="url" type="url" placeholder="https://example.com/widget.js" required></label><label>导入类型<select name="type"><option value="auto">自动识别模块 / 订阅</option><option value="manifest">合集订阅（无扩展名链接选择此项）</option><option value="asset">资源文件</option></select></label>${platformField()}<p class="hint">支持公开 HTTP / HTTPS 地址（支持自定义端口）。订阅内最多 50 个模块；导入成功后全部保存到本站。GitHub 文件请使用 Raw 链接。</p>`, async form=>{
     const obj={url:form.elements.url.value,platform:form.elements.platform.value}; if(form.elements.type.value==='manifest') obj.manifest=true; if(form.elements.type.value==='asset') obj.kind='asset';
     await api('/api/import/start','POST',obj);clearTimeout(importTimer);monitorImport();toast('后台导入已开始，可在页面查看进度');
   }, '开始导入');
@@ -187,8 +195,8 @@ function editCollection(c) {
   sync();
 }
 function editModule(m) {
-  modal('编辑文件信息', `<div class="form-row"><label>显示名称<input name="title" value="${esc(m.title)}" required></label><label>版本<input name="version" value="${esc(m.version)}"></label></div><label>作者<input name="author" value="${esc(m.author)}"></label><label>描述<textarea name="description">${esc(m.description)}</textarea></label>${m.kind==='module'?platformField(m.platform):''}<label>远程来源（可选，用于刷新）<input name="source_url" type="url" value="${esc(m.source_url)}"></label><label>替换文件（可选，最大 5 MiB）<input name="replacement" type="file" ${m.kind==='module'?'accept=".js"':''}></label>${m.kind==='module'&&!m.encrypted?`<button type="button" class="secondary" data-action="source" data-id="${m.id}">在线编辑源码</button>`:''}<p class="hint">${m.encrypted?'已识别加密模块，仅支持替换文件。':'信息修改不会改写源码中的 WidgetMetadata。'}</p>`, async form=>{
-    const data=Object.fromEntries(new FormData(form));delete data.replacement;
+  modal('编辑文件信息', `<div class="form-row"><label>显示名称<input name="title" value="${esc(m.title)}" required></label><label>版本<input name="version" value="${esc(m.version)}"></label></div><label>作者<input name="author" value="${esc(m.author)}"></label><label>描述<textarea name="description">${esc(m.description)}</textarea></label>${m.kind==='module'?platformField(m.platform):''}<label>远程来源（可选，用于刷新）<input name="source_url" type="url" value="${esc(m.source_url)}"></label><label><input type="checkbox" name="auto_refresh" ${m.refresh?.auto_refresh?'checked':''}> 每天自动刷新一次（需远程来源）</label><p class="hint">${esc(m.refresh?.error||'刷新失败保留原文件，文件夹和直链保持不变。')}</p><label>替换文件（可选，最大 5 MiB）<input name="replacement" type="file" ${m.kind==='module'?'accept=".js"':''}></label>${m.kind==='module'&&!m.encrypted?`<button type="button" class="secondary" data-action="source" data-id="${m.id}">在线编辑源码</button>`:''}<p class="hint">${m.encrypted?'已识别加密模块，仅支持替换文件。':'信息修改不会改写源码中的 WidgetMetadata。'}</p>`, async form=>{
+    const data=Object.fromEntries(new FormData(form));delete data.replacement;data.auto_refresh=form.elements.auto_refresh.checked;
     const replacement=form.elements.replacement.files[0];if(replacement){data.data=await fileData(replacement);data.filename=replacement.name;data.replace=true;}
     await api(`/api/modules/${m.id}`,'PUT',data);await reload();toast('文件已更新');
   });
@@ -272,3 +280,15 @@ function moveFiles(){
  if(!ids.length){toast('请先选择资源文件');return;}
  modal('移动资源文件',`<label>目标文件夹<select name="folder">${folderOptions(currentFolder)}</select></label><p>移动 ${ids.length} 个文件，原直链保持不变。</p>`,async form=>{await api('/api/assets/move','POST',{ids,folder_id:form.elements.folder.value});selectedFiles.clear();await reload();});
 }
+
+function refreshFiles(schedule){
+ const ids=[...selectedFiles].filter(id=>state.modules.some(m=>m.id===id));
+ if(!ids.length){toast('请先选择文件');return;}
+ const remote=state.modules.filter(m=>ids.includes(m.id)&&m.source_url).length;
+ modal(schedule?'批量定时刷新':'刷新所选文件',`<p>已选 ${ids.length} 个文件，其中 ${remote} 个有远程来源。本地上传文件自动跳过。</p>${schedule?'<label>定时刷新<select name="enabled"><option value="true">每天自动刷新一次</option><option value="false">关闭自动刷新</option></select></label>':'<p>逐个更新，失败保留旧文件。可查看进度或取消；已完成的更新保留。</p>'}`,async form=>{
+  await api('/api/modules/batch','POST',schedule?{ids,action:'auto_refresh',enabled:form.elements.enabled.value==='true'}:{ids,action:'refresh'});
+  if(schedule){await reload();toast('定时刷新设置已保存');}else{clearTimeout(importTimer);monitorImport();}
+ },schedule?'保存':'开始刷新');
+}
+
+function assetEmptyKind(folder,total){return folder?'folder':total>0?'folders':'library';}

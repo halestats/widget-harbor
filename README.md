@@ -17,7 +17,7 @@
 
 ## 快速开始
 
-当前稳定版 **v1.4.0**：[下载发行包](https://github.com/halestats/widget-harbor/releases/latest) · [Linux 安装](docs/INSTALL.md) · [升级已有部署](docs/UPGRADE-1.4.md)。
+当前稳定版 **v1.4.1**：[下载发行包](https://github.com/halestats/widget-harbor/releases/latest) · [Linux 安装](docs/INSTALL.md) · [升级已有部署](docs/UPGRADE-1.4.md)。
 
 需要 Docker Engine 和 Docker Compose v2 或更新版本。下载本仓库后，在项目根目录执行：
 
@@ -121,6 +121,6 @@ node tests/test_ui.cjs       # 前端逻辑回归，需要 Node.js
 
 ## 版本与同步规则
 
-v1.4.0 已经包含此前所有功能。填写远程订阅来源并保存后，刷新会同步上游名称、描述、图标和成员，合集链接标识保持不变；未提供的字段保留本地值。自建合集刷新选中的远程模块，保留本地上传内容。每天刷新是距上次尝试满 24 小时后执行，容器需持续运行。
+v1.4.1 已经包含此前所有功能。填写远程订阅来源并保存后，刷新会同步上游名称、描述、图标和成员，合集链接标识保持不变；未提供的字段保留本地值。自建合集刷新选中的远程模块，保留本地上传内容。每天刷新是距上次尝试满 24 小时后执行，容器需持续运行。
 
 详情见 [更新日志](CHANGELOG.md) 与 [升级及刷新规则](docs/UPGRADE-1.4.md)。

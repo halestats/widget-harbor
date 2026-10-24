@@ -13,13 +13,13 @@ def destination(url):
         parsed = urlsplit(url)
         if parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.username or parsed.password:
             raise ValueError()
-        port = parsed.port or (443 if parsed.scheme == 'https' else 80)
-        if port not in (80, 443):
+        port = parsed.port if parsed.port is not None else (443 if parsed.scheme == 'https' else 80)
+        if not 1 <= port <= 65535:
             raise ValueError()
         host = parsed.hostname.encode('idna').decode()
         addresses = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
     except (ValueError, UnicodeError, OSError):
-        raise Problem('远程地址无效或 DNS 解析失败；仅允许公开 HTTP/HTTPS 的 80/443 端口') from None
+        raise Problem('远程地址无效或 DNS 解析失败；仅允许公开 HTTP/HTTPS 地址及有效端口') from None
     if not addresses or any(not ipaddress.ip_address(a[4][0]).is_global for a in addresses):
         raise Problem('不允许访问内网、回环、保留地址')
     return parsed, host, port, addresses[0]

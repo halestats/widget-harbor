@@ -111,3 +111,7 @@ module_ids 按数组顺序输出。最多 100 个，不得重复；只能引用�
 - `GET /api/state` 额外返回 folders、locations、orders；合集的 icon_display 是缓存地址。
 
 图片保存在数据库及 data/images/，JSON 备份含图片原始数据。资源 URL 不受移动文件夹或排序影响。
+
+## v1.4.1 文件刷新
+
+`POST /api/modules/batch` 支持 `{ids, action:"refresh"}`（202，后台任务）和 `{ids, action:"auto_refresh", enabled:true/false}`。沿用 `/api/import/status` 与 `/api/import/cancel` 查看/取消任务，返回成功、跳过、失败数量与错误列表。`PUT /api/modules/{id}` 可传布尔值 auto_refresh。状态中的每个文件带 refresh，记录自动刷新设置和最近尝试/成功/错误。JSON 备份增加可选 file_sync 字段。

@@ -52,7 +52,7 @@ class CoreTests(unittest.TestCase):
         for host in ('127.0.0.1','10.0.0.1','169.254.169.254','::1','::ffff:127.0.0.1'):
             with patch('hub.network.socket.getaddrinfo', return_value=[(2,1,6,'',(host,80))]):
                 with self.assertRaises(Problem):destination('http://example.com')
-        for url in ('file:///etc/passwd','http://user:pass@example.com','https://example.com:8080'):
+        for url in ('file:///etc/passwd','http://user:pass@example.com','https://example.com:0','https://example.com:65536'):
             with self.assertRaises(Problem):destination(url)
 
     def test_redirect_is_revalidated(self):
