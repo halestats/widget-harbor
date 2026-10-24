@@ -1,5 +1,5 @@
 {
-  "tag": "v1.4.1",
-  "commit": "f6ed9e483b296ea6e53ef19e1b8a110961beced4",
-  "notes": "新增模块与资源文件的批量刷新、单个及批量每日自动刷新；本地文件自动跳过，更新失败保留原文件。\n\n支持公开 HTTP/HTTPS 自定义端口，保留 DNS 地址限制、TLS 验证与重定向检查。修复资源文件归入文件夹后根目录错误显示初次上传提示。\n\n通过 52 项 Python 测试、前端回归及本地 Docker 构建；未替用户升级实际设备。\n\n[安装说明](https://github.com/halestats/widget-harbor/blob/v1.4.1/docs/INSTALL.md) · [保留数据升级](https://github.com/halestats/widget-harbor/blob/v1.4.1/docs/UPGRADE-1.4.md)\n\n附件与 amd64/arm64 镜像由 Actions 生成。镜像：`ghcr.io/halestats/widget-harbor:1.4.1`。"
+  "tag": "v1.4.2",
+  "commit": "6eacc53864efe7f18bd3112b47f831c093f77299",
+  "notes": "播放器刷新联动：GET 请求 Forward / Rex 订阅时同步对应合集上游。最多等待 8 秒，完成后返回最新内容；超时后台继续，失败保留原内容。慢任务完成后需再次刷新播放器。\n\n同一合集 60 秒冷却，已有导入/同步任务时复用缓存；本地上传文件保留。HEAD 和单文件下载不触发同步，不依赖每日刷新开关。播放器必须实际请求服务器才会触发。\n\n56 项 Python 测试、前端回归及本地 Docker 构建通过；尚未在用户播放器与服务器上实测。\n\n[安装说明](https://github.com/halestats/widget-harbor/blob/v1.4.2/docs/INSTALL.md) · [保留数据升级](https://github.com/halestats/widget-harbor/blob/v1.4.2/docs/UPGRADE-1.4.md)\n\n镜像：`ghcr.io/halestats/widget-harbor:1.4.2`，amd64 / arm64。"
 }
