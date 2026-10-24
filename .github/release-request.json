@@ -1,0 +1,5 @@
+{
+  "tag": "v1.4.1",
+  "commit": "f6ed9e483b296ea6e53ef19e1b8a110961beced4",
+  "notes": "新增模块与资源文件的批量刷新、单个及批量每日自动刷新；本地文件自动跳过，更新失败保留原文件。\n\n支持公开 HTTP/HTTPS 自定义端口，保留 DNS 地址限制、TLS 验证与重定向检查。修复资源文件归入文件夹后根目录错误显示初次上传提示。\n\n通过 52 项 Python 测试、前端回归及本地 Docker 构建；未替用户升级实际设备。\n\n[安装说明](https://github.com/halestats/widget-harbor/blob/v1.4.1/docs/INSTALL.md) · [保留数据升级](https://github.com/halestats/widget-harbor/blob/v1.4.1/docs/UPGRADE-1.4.md)\n\n附件与 amd64/arm64 镜像由 Actions 生成。镜像：`ghcr.io/halestats/widget-harbor:1.4.1`。"
+}
