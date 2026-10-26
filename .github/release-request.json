@@ -1,5 +1,5 @@
 {
-  "tag": "v1.4.3",
-  "commit": "84320f264594e84a3a8556a6c89497f3e4766400",
-  "notes": "修复文件夹内链接导入未保存目标分类的问题：资源页默认按资源文件导入，保存位置默认当前文件夹，也可手动修改。后台在同一事务保存文件与分类，目标文件夹不存在时回滚，避免文件意外落入根目录。\n\n登录页、侧栏和浏览器图标统一使用融合 Rex / Forward 元素的新绿色 Logo。\n\n58 项 Python 测试、前端回归、Docker 构建通过；浏览器已验证文件夹内导入默认值。尚未替用户升级实际设备。\n\n[安装说明](https://github.com/halestats/widget-harbor/blob/v1.4.3/docs/INSTALL.md) · [保留数据升级](https://github.com/halestats/widget-harbor/blob/v1.4.3/docs/UPGRADE-1.4.md)\n\n镜像 `ghcr.io/halestats/widget-harbor:1.4.3` 支持 amd64 / arm64。"
+  "tag": "v1.4.4",
+  "commit": "105f0e4a22846df6cc934402f7eca86bde6f9b19",
+  "notes": "修复 Rex 合集导出的空可选字段：省略未填写的 icon、site 等元数据，保留有值字段和模块链接，Forward 输出不变。\n\nSwift JSONDecoder 将空字符串解码为可选 URL 时会报 Invalid URL string。使用两个实际模块的合集进行对照：旧响应在 widgets[0].icon 失败，修复后响应通过。Rex 客户端实际导入仍需设备验证。\n\n60 项 Python 测试、前端回归、Docker 构建通过。\n\n[安装说明](https://github.com/halestats/widget-harbor/blob/v1.4.4/docs/INSTALL.md) · [保留数据升级](https://github.com/halestats/widget-harbor/blob/v1.4.4/docs/UPGRADE-1.4.md)\n\n镜像 `ghcr.io/halestats/widget-harbor:1.4.4`，支持 amd64 / arm64。"
 }
