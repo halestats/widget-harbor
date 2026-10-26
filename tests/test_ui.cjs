@@ -19,3 +19,17 @@ assert.equal(ctx.assetEmptyKind('',2),'folders');assert.equal(ctx.assetEmptyKind
  job={id:'partial',status:'complete',result:{success:1,skipped:2,failed:1}};await ctx.monitorImport();assert.match(node('#import-message').textContent,/成功 1，跳过 2，失败 1/);assert.equal(node('#dismiss-import').hidden,false);
  console.log('UI regression passed: empty list, running controls, auto-dismiss, manual dismiss, acknowledged status and new jobs.');
 })().catch(e=>{console.error(e);process.exitCode=1});
+// Link imports capture the folder where the dialog was opened.
+(async()=>{
+ let dialog, posted;
+ const c=vm.createContext({page:'assets',currentFolder:'icons',modal:(title,html,submit)=>{dialog={html,submit}},platformField:()=>'',folderOptions:id=>`<option selected value="${id}">Icons</option>`,api:async(path,method,obj)=>{posted=obj},clearTimeout(){},monitorImport(){},toast(){},importTimer:null});
+ vm.runInContext(src.slice(src.indexOf('function importLink()'),src.indexOf('function editCollection(')),c);
+ c.importLink();assert.match(dialog.html,/<option value="asset" selected>/);assert.match(dialog.html,/name="folder_id"/);
+ c.currentFolder='another-folder';
+ await dialog.submit({elements:{url:{value:'https://example.com/icons.json'},platform:{value:'both'},type:{value:'asset'},folder_id:{value:'icons'}}});
+ assert.equal(posted.folder_id,'icons');assert.equal(posted.kind,'asset');
+ c.page='modules';c.importLink();assert.doesNotMatch(dialog.html,/name="folder_id"/);
+ await dialog.submit({elements:{url:{value:'https://example.com/a.js'},platform:{value:'both'},type:{value:'auto'}}});
+ assert.equal(posted.folder_id,undefined);assert.equal(posted.kind,undefined);
+ console.log('Folder import UI regression passed.');
+})().catch(e=>{console.error(e);process.exitCode=1});

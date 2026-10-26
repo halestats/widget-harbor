@@ -1,10 +1,10 @@
-# 升级至 v1.4.2
+# 升级至 v1.4.3
 
 保留现有目录和 `.env`，不要重装。以下示例的安装目录 `/opt/widget-harbor` 必须替换为实际旧目录。
 
 ```sh
 stage=$(mktemp -d)
-tar -xzf widget-harbor-v1.4.2.tar.gz -C "$stage"
+tar -xzf widget-harbor-v1.4.3.tar.gz -C "$stage"
 sudo sh "$stage/widget-harbor/scripts/upgrade.sh" /opt/widget-harbor
 ```
 
@@ -16,7 +16,7 @@ sudo sh "$stage/widget-harbor/scripts/upgrade.sh" /opt/widget-harbor
 
 新 JSON 备份格式为 schema 2，包含图片、文件夹和排序；仍可导入 schema 1 旧备份。旧版程序不能恢复新版 JSON 备份。升级前备份用于回退；回退时恢复完整旧数据库和旧镜像，不要让旧程序写入新结构。
 
-### v1.4.2 刷新改进
+### v1.4.3 刷新改进
 
 在模块库或资源文件页选择文件后，点击“刷新所选”或“定时刷新”。也可在文件编辑窗口单独开启每天刷新。首次开启后在调度器下一次检查时执行（约一分钟），之后距上次尝试满 24 小时再执行，容器需持续运行。无远程来源的本地文件跳过。任务最多 500 个文件、5 分钟或 50 MiB；单文件失败继续处理其他项，已成功更新的内容保留。失败汇总可手动关闭，具体错误可在对应文件编辑窗口查看。
 

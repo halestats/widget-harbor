@@ -269,6 +269,8 @@ class Handler(BaseHTTPRequestHandler):
                 raise Problem('导入已取消')
             with self.server.store.connect() as db:
                 self.server.store.save_module(db, module)
+                if module['kind'] == 'asset':
+                    self.server.store.catalog.move(db, [module['id']], text(obj.get('folder_id', ''), 32))
             return {'id':module['id']}
         try:
             manifest = json.loads(data)
@@ -323,10 +325,12 @@ class Handler(BaseHTTPRequestHandler):
                 with self.server.store.connect() as db:
                     db.execute('SELECT 1').fetchone()
                 return self.send(200, {'status':'ok'})
-            if path in ('/', '/app.js', '/style.css', '/favicon.svg'):
+            if path == '/favicon.svg':
+                return self.send(302, b'', headers={'Location':'/logo.png'})
+            if path in ('/', '/app.js', '/style.css', '/logo.png'):
                 filename = 'index.html' if path == '/' else path[1:]
                 mime = mimetypes.guess_type(filename)[0] or 'application/octet-stream'
-                return self.send(200, (ROOT/'static'/filename).read_bytes(), mime+'; charset=utf-8')
+                return self.send(200, (ROOT/'static'/filename).read_bytes(), mime if filename.endswith('.png') else mime+'; charset=utf-8')
             import re
             image_match=re.fullmatch(r'/images/([a-f0-9]{64})',path)
             if image_match:

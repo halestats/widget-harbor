@@ -166,8 +166,9 @@ function upload() {
   zone.addEventListener('drop',e=>{e.preventDefault();zone.classList.remove('drag');zone.querySelector('input').files=e.dataTransfer.files;});
 }
 function importLink() {
-  modal('从链接导入', `<label>远程文件 URL<input name="url" type="url" placeholder="https://example.com/widget.js" required></label><label>导入类型<select name="type"><option value="auto">自动识别模块 / 订阅</option><option value="manifest">合集订阅（无扩展名链接选择此项）</option><option value="asset">资源文件</option></select></label>${platformField()}<p class="hint">支持公开 HTTP / HTTPS 地址（支持自定义端口）。订阅内最多 50 个模块；导入成功后全部保存到本站。GitHub 文件请使用 Raw 链接。</p>`, async form=>{
-    const obj={url:form.elements.url.value,platform:form.elements.platform.value}; if(form.elements.type.value==='manifest') obj.manifest=true; if(form.elements.type.value==='asset') obj.kind='asset';
+  const assetContext=page==='assets', targetFolder=assetContext?currentFolder:'';
+  modal('从链接导入', `<label>远程文件 URL<input name="url" type="url" placeholder="https://example.com/widget.js" required></label><label>导入类型<select name="type"><option value="auto" ${assetContext?'':'selected'}>自动识别模块 / 订阅</option><option value="manifest">合集订阅（无扩展名链接选择此项）</option><option value="asset" ${assetContext?'selected':''}>资源文件</option></select></label>${assetContext?`<label>资源保存位置<select name="folder_id">${folderOptions(targetFolder)}</select></label>`:''}${platformField()}<p class="hint">支持公开 HTTP / HTTPS 地址（支持自定义端口）。订阅内最多 50 个模块；导入成功后全部保存到本站。GitHub 文件请使用 Raw 链接。</p>`, async form=>{
+    const obj={url:form.elements.url.value,platform:form.elements.platform.value}; if(form.elements.type.value==='manifest') obj.manifest=true; if(form.elements.type.value==='asset'){obj.kind='asset';obj.folder_id=form.elements.folder_id?.value||'';}
     await api('/api/import/start','POST',obj);clearTimeout(importTimer);monitorImport();toast('后台导入已开始，可在页面查看进度');
   }, '开始导入');
 }
