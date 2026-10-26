@@ -1,5 +1,5 @@
 {
-  "tag": "v1.4.2",
-  "commit": "6eacc53864efe7f18bd3112b47f831c093f77299",
-  "notes": "播放器刷新联动：GET 请求 Forward / Rex 订阅时同步对应合集上游。最多等待 8 秒，完成后返回最新内容；超时后台继续，失败保留原内容。慢任务完成后需再次刷新播放器。\n\n同一合集 60 秒冷却，已有导入/同步任务时复用缓存；本地上传文件保留。HEAD 和单文件下载不触发同步，不依赖每日刷新开关。播放器必须实际请求服务器才会触发。\n\n56 项 Python 测试、前端回归及本地 Docker 构建通过；尚未在用户播放器与服务器上实测。\n\n[安装说明](https://github.com/halestats/widget-harbor/blob/v1.4.2/docs/INSTALL.md) · [保留数据升级](https://github.com/halestats/widget-harbor/blob/v1.4.2/docs/UPGRADE-1.4.md)\n\n镜像：`ghcr.io/halestats/widget-harbor:1.4.2`，amd64 / arm64。"
+  "tag": "v1.4.3",
+  "commit": "84320f264594e84a3a8556a6c89497f3e4766400",
+  "notes": "修复文件夹内链接导入未保存目标分类的问题：资源页默认按资源文件导入，保存位置默认当前文件夹，也可手动修改。后台在同一事务保存文件与分类，目标文件夹不存在时回滚，避免文件意外落入根目录。\n\n登录页、侧栏和浏览器图标统一使用融合 Rex / Forward 元素的新绿色 Logo。\n\n58 项 Python 测试、前端回归、Docker 构建通过；浏览器已验证文件夹内导入默认值。尚未替用户升级实际设备。\n\n[安装说明](https://github.com/halestats/widget-harbor/blob/v1.4.3/docs/INSTALL.md) · [保留数据升级](https://github.com/halestats/widget-harbor/blob/v1.4.3/docs/UPGRADE-1.4.md)\n\n镜像 `ghcr.io/halestats/widget-harbor:1.4.3` 支持 amd64 / arm64。"
 }
