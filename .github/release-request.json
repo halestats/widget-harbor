@@ -1,5 +1,5 @@
 {
-  "tag": "v1.4.4",
-  "commit": "105f0e4a22846df6cc934402f7eca86bde6f9b19",
-  "notes": "修复 Rex 合集导出的空可选字段：省略未填写的 icon、site 等元数据，保留有值字段和模块链接，Forward 输出不变。\n\nSwift JSONDecoder 将空字符串解码为可选 URL 时会报 Invalid URL string。使用两个实际模块的合集进行对照：旧响应在 widgets[0].icon 失败，修复后响应通过。Rex 客户端实际导入仍需设备验证。\n\n60 项 Python 测试、前端回归、Docker 构建通过。\n\n[安装说明](https://github.com/halestats/widget-harbor/blob/v1.4.4/docs/INSTALL.md) · [保留数据升级](https://github.com/halestats/widget-harbor/blob/v1.4.4/docs/UPGRADE-1.4.md)\n\n镜像 `ghcr.io/halestats/widget-harbor:1.4.4`，支持 amd64 / arm64。"
+  "tag": "v1.4.5",
+  "commit": "e5c7a93c82b118d2d983a7222835f5c5fc600f7a",
+  "notes": "修复 v1.4.4 的 Rex 合集导出回归：保留 description、author 等文本字段，即使值为空；仅省略空的可选 icon / site URL。不会改动合集名称、链接标识及模块内容，Forward 导出不变。\n\n验证：60 项 Python 测试、前端回归通过；本机 Rex 对照不再报“无法识别的模块数据”，用户确认修正后的测试合集在手机上能显示模块。Mac 新增测试合集仍出现空列表，原因尚未确认。本版本不宣称解决所有客户端校验问题，也不能修复上游服务器的 HTTP 500。\n\n[保留数据升级](https://github.com/halestats/widget-harbor/blob/v1.4.5/docs/UPGRADE-1.4.md) · [Linux 安装](https://github.com/halestats/widget-harbor/blob/v1.4.5/docs/INSTALL.md)\n\n镜像 `ghcr.io/halestats/widget-harbor:1.4.5`，支持 amd64 / arm64。"
 }
