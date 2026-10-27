@@ -245,11 +245,12 @@ class Handler(BaseHTTPRequestHandler):
                 widget.update(id=m['widget_id'], url=f'{self.server.site_url}/api/modules/{m["id"]}/raw?v={m["sha256"][:12]}')
                 if platform == 'rex':
                     # Swift's URL? decoder rejects an empty string, even though
-                    # omitting an optional URL is valid. Do not emit empty metadata.
-                    widget = {key:value for key,value in widget.items() if value != ''}
+                    # omitting an optional URL is valid. Required text fields such as
+                    # description must remain present even when empty (Rex decoder).
+                    widget = {key:value for key,value in widget.items() if key not in ('icon', 'site') or value != ''}
                 result['widgets'].append(widget)
             if platform == 'rex':
-                result = {key:value for key,value in result.items() if value != ''}
+                result = {key:value for key,value in result.items() if key != 'icon' or value != ''}
         self.send(200, result)
 
     def import_data(self, obj):

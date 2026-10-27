@@ -9,7 +9,7 @@ class RexExportTests(unittest.TestCase):
     login=test_hub.ApiTests.login
     upload=test_hub.ApiTests.upload
 
-    def test_rex_omits_empty_optional_metadata_forward_unchanged(self):
+    def test_rex_preserves_required_text_omits_empty_urls_forward_unchanged(self):
         self.login()
         ident=self.upload()
         self.request('/api/modules/'+ident,'PUT',{'icon':'','site':'','author':'','description':''})
@@ -18,10 +18,12 @@ class RexExportTests(unittest.TestCase):
         self.assertEqual(status,200)
         result=json.loads(raw)
         self.assertNotIn('icon',result)
-        self.assertNotIn('description',result)
+        self.assertEqual(result['description'],'')
         widget=result['widgets'][0]
-        for name in ('icon','site','author','description'):
+        for name in ('icon','site'):
             self.assertNotIn(name,widget)
+        for name in ('author','description'):
+            self.assertEqual(widget[name],'')
         for name in ('id','title','version','requiredVersion','url'):
             self.assertTrue(widget[name])
         forward=json.loads(self.request('/api/collections/optional.fwd')[2])
