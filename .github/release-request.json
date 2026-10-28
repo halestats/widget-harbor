@@ -1,5 +1,5 @@
 {
-  "tag": "v1.4.6",
-  "commit": "d84db90feb34bf9e323b7541fb72a8c0b0054cdb",
-  "notes": "修复 OpenClash / Fake-IP 环境中模块、合集、资源及图标无法导入和刷新的问题。检测到 198.18.0.0/15 后通过 Cloudflare HTTPS DNS 查询真实公网 IPv4，继续校验公网地址和 TLS，解析失败不放行。增加页脚 GitHub 项目入口。65 项后端测试及前端回归通过；用户已在 iStoreOS 验证 HTTPS DNS 可达，升级后的实际导入待验证。"
+  "tag": "v1.4.7",
+  "commit": "dbb7d28c92548034f4a5f6822a878fdd3c102bd9",
+  "notes": "合集卡片新增 + Forward 一键导入，保留 .fwd 复制入口。网页页脚提供 GitHub 图标与项目链接，并完善移动端换行与悬停样式。前端回归通过；Forward 客户端实际跳转待设备确认。"
 }
