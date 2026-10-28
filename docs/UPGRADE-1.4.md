@@ -1,10 +1,10 @@
-# 升级至 v1.4.5
+# 升级至 v1.4.6
 
 保留现有目录和 `.env`，不要重装。以下示例的安装目录 `/opt/widget-harbor` 必须替换为实际旧目录。
 
 ```sh
 stage=$(mktemp -d)
-tar -xzf widget-harbor-v1.4.5.tar.gz -C "$stage"
+tar -xzf widget-harbor-v1.4.6.tar.gz -C "$stage"
 sudo sh "$stage/widget-harbor/scripts/upgrade.sh" /opt/widget-harbor
 ```
 
@@ -22,6 +22,6 @@ sudo sh "$stage/widget-harbor/scripts/upgrade.sh" /opt/widget-harbor
 
 公开地址支持自定义端口（例如 HTTPS 5090），仍不允许内网、回环和保留地址；自建域名若在容器 DNS 中解析到内网地址，仍会被拦截。
 
-### v1.4.5 Rex 合集兼容修复
+### v1.4.6 Rex 合集兼容修复
 
-v1.4.4 误将空描述等文本字段省略，可能导致 Rex 报“无法识别的模块数据”。v1.4.5 保留这些文本字段，仅省略空的可选 URL。升级后使用模块港湾生成的 `.rex` 链接重新导入或刷新；不会改动合集名称、链接标识及模块内容。该修复不能解决原始上游返回 HTTP 500 或其他客户端校验错误。
+v1.4.4 误将空描述等文本字段省略，可能导致 Rex 报“无法识别的模块数据”。v1.4.6 保留这些文本字段，仅省略空的可选 URL。升级后使用模块港湾生成的 `.rex` 链接重新导入或刷新；不会改动合集名称、链接标识及模块内容。该修复不能解决原始上游返回 HTTP 500 或其他客户端校验错误。
