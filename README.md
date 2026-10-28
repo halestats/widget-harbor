@@ -17,7 +17,7 @@
 
 ## 快速开始
 
-当前稳定版 **v1.4.6**：[下载发行包](https://github.com/halestats/widget-harbor/releases/latest) · [Linux 安装](docs/INSTALL.md) · [升级已有部署](docs/UPGRADE-1.4.md)。
+当前稳定版 **v1.4.7**：[下载发行包](https://github.com/halestats/widget-harbor/releases/latest) · [Linux 安装](docs/INSTALL.md) · [升级已有部署](docs/UPGRADE-1.4.md)。
 
 需要 Docker Engine 和 Docker Compose v2 或更新版本。下载本仓库后，在项目根目录执行：
 
@@ -47,7 +47,7 @@ docker compose ps
 1. **模块库 → 上传模块**：选择自己的 `.js`，或上传 `examples/hello-widget.js` 验证格式识别。
 2. 确认兼容平台：Forward、Rex 或双平台。平台标签由管理员确认，不进行脚本运行测试。
 3. **订阅合集 → 创建合集**：填写名称、英文链接标识，勾选模块后保存。
-4. Forward：复制合集卡片上的 `.fwd` 链接，在客户端模块订阅界面粘贴。
+4. Forward：复制合集卡片上的 `.fwd` 链接，在客户端模块订阅界面粘贴，或在已安装 Forward 的设备上点击 **+ Forward**。
 5. Rex：复制 `.rex` 链接，或在已安装 Rex 的设备上点击 **+ Rex**。
 6. 有远程来源的文件可点击 **刷新**；更新保留本站文件 ID 和直链，失败保留旧内容。
 7. **设置与备份 → 导出完整备份**，定期保存到其他设备。

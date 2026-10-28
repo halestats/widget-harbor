@@ -4,11 +4,11 @@
 
 ## 从发行包安装
 
-从 [Releases](https://github.com/halestats/widget-harbor/releases/latest) 下载 `widget-harbor-v1.4.6.tar.gz` 到服务器。例如：
+从 [Releases](https://github.com/halestats/widget-harbor/releases/latest) 下载 `widget-harbor-v1.4.7.tar.gz` 到服务器。例如：
 
 ```sh
 sudo mkdir -p /opt
-sudo tar -xzf widget-harbor-v1.4.6.tar.gz -C /opt
+sudo tar -xzf widget-harbor-v1.4.7.tar.gz -C /opt
 cd /opt/widget-harbor
 sudo sh scripts/install.sh
 ```
