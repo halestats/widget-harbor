@@ -28,7 +28,7 @@ case "$*" in
  *com.docker.compose.project.working_dir*) echo "$TEST_TARGET";;
  *com.docker.compose.project.config_files*) echo "$TEST_TARGET/docker-compose.yml$TEST_OVERRIDE";;
  *Mounts*) echo /existing/storage;;
- *'cat /tmp/upgrade.sqlite3'*) echo sqlite-test-fixture;;
+ *'exec -T hub python -') cat > "$TEST_ROOT/backup-script"; echo sqlite-test-fixture;;
  *'.Image'*) echo old-image;;
  *'.State.Health'*) echo healthy;;
  *'ps -q hub'*) echo test-container;;
@@ -43,4 +43,7 @@ esac
                 for line in compose:
                     self.assertEqual(' -f docker-compose.storage.yml' in line,override=='docker-compose.storage.yml')
                     self.assertEqual(' -f docker-compose.istoreos.yml' in line,override=='docker-compose.istoreos.yml')
-                self.assertTrue(list((target/'backups').glob('*/hub.sqlite3')))
+                backups = list((target/'backups').glob('*/hub.sqlite3'))
+                self.assertEqual(len(backups), 1)
+                self.assertEqual(backups[0].read_text(), 'sqlite-test-fixture\n')
+                self.assertIn('db.backup(copy)', (root/'backup-script').read_text())
