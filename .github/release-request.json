@@ -1,5 +1,5 @@
 {
-  "tag": "v1.5.1",
-  "commit": "2c4a7d98945258040c8128eeef3b0cfa714f4650",
-  "notes": "## 修复\n- 控制台只查询模块元数据，解决登录后 SQLite 临时空间不足造成的 HTTP 500。\n- CI 和发行验证覆盖 16 MiB 的容器临时空间、28 MiB 的测试文件和完整的控制台加载流程。\n- 五分钟内连续三次控制台加载返回 HTTP 500 时，容器日志写入可监控的告警。\n\n保留已有配置和数据，按[升级指南](https://github.com/halestats/widget-harbor/blob/v1.5.1/docs/UPGRADE-1.4.md)更新。"
+  "tag": "v1.6.0",
+  "commit": "c910bb939f1f66dc3f2c4e34549583f01eec4a95",
+  "notes": "## Rex 首页配置\n\n- 支持含包内或内联 HTML 卡片的 Rex v2 首页包。检查报告提示缺字段、本机依赖和卡片配置问题，支持复制和缓存。\n- 支持将所选本机模块和内置脚本切换为本站同 ID 模块链接，以及添加、替换和移除 HTML 卡片。默认另存为私有副本，覆盖则保留首页 ID 和分享地址。\n- 已分享首页可轮换链接。旧链接立即失效。\n- 生成 Rex / Forward 订阅只读取必要的模块元数据。\n\n从已有版本升级可沿用安装目录和配置，详细步骤见[升级指南](https://github.com/halestats/widget-harbor/blob/v1.6.0/docs/UPGRADE-1.4.md)。"
 }
