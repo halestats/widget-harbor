@@ -13,7 +13,7 @@ from http.cookies import SimpleCookie, CookieError
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit, unquote, quote, urljoin
-from . import library, organizer
+from . import home_tools, library, organizer
 from .core import Store, Problem, prepare_module, text, MAX_FILE
 from .network import fetch
 
@@ -254,13 +254,15 @@ class Handler(BaseHTTPRequestHandler):
             if not row:
                 raise Problem('合集不存在', 404)
             result = {k:row[k] for k in ('title','description','icon')}
-            rows = db.execute('SELECT m.* FROM modules m JOIN members x ON x.module_id=m.id WHERE x.slug=? ORDER BY x.position', (slug,))
+            rows = db.execute('''SELECT m.id, m.widget_id, m.title, m.description, m.requiredVersion,
+                                        m.version, m.author, m.icon, m.site, m.sha256
+                                 FROM members x JOIN modules m ON m.id=x.module_id
+                                 WHERE x.slug=? AND m.platform IN (?, 'both') ORDER BY x.position''',
+                              (slug, platform))
             result['icon']=self.server.store.catalog.display(db,result['icon'])
             if result['icon'].startswith('/images/'):result['icon']=self.server.site_url+result['icon']
             result['widgets'] = []
             for m in rows:
-                if m['platform'] not in (platform, 'both'):
-                    continue
                 widget = {k:m[k] for k in ('title','description','requiredVersion','version','author','icon','site')}
                 widget.update(id=m['widget_id'], url=f'{self.server.site_url}/api/modules/{m["id"]}/raw?v={m["sha256"][:12]}')
                 if platform == 'rex':
@@ -472,6 +474,18 @@ class Handler(BaseHTTPRequestHandler):
                 filename += '.rex'
             disposition = "attachment; filename=home.rex; filename*=UTF-8''" + quote(filename, safe='')
             return self.send(200, row['content'], 'application/octet-stream', {'Content-Disposition':disposition})
+        home_check = re.fullmatch(r'/api/homes/([a-f0-9]{32})/check', path)
+        if home_check and method == 'GET':
+            return self.send(200, library.check_home(store, home_check[1]))
+        home_tool = re.fullmatch(r'/api/homes/([a-f0-9]{32})/tools', path)
+        if home_tool and method in ('GET', 'POST'):
+            if method == 'GET':
+                return self.send(200, home_tools.preview(store, home_tool[1]))
+            obj = self.body()
+            origin = obj.get('origin', self.server.site_url)
+            if not isinstance(origin, str) or origin not in self.server.allowed_origins:
+                raise Problem('首页链接必须使用本站已配置的地址')
+            return self.send(200, home_tools.apply(store, home_tool[1], obj, origin))
         home = re.fullmatch(r'/api/homes/([a-f0-9]{32})(/share)?',path)
         if (path=='/api/homes' and method=='POST') or home:
             obj=self.body() if method in ('POST','PUT','PATCH') else {}
@@ -486,7 +500,12 @@ class Handler(BaseHTTPRequestHandler):
                     if obj.get('expected')!=row['sha'] and method!='DELETE':
                         raise Problem('首页已更新，请刷新',409)
                     if home[2] and method=='POST':
-                        token=(row['share'] or secrets.token_hex(24)) if obj.get('enabled') is True else None
+                        if obj.get('rotate') is True:
+                            if not row['share'] or obj.get('expected_share') != row['share']:
+                                raise Problem('分享链接已变化，请刷新后重试', 409)
+                            token = secrets.token_hex(24)
+                        else:
+                            token=(row['share'] or secrets.token_hex(24)) if obj.get('enabled') is True else None
                         db.execute('UPDATE homes SET share=? WHERE id=?',(token,ident))
                     elif not home[2] and method=='PUT':
                         obj.setdefault('title', row['title'])
@@ -654,12 +673,16 @@ class Handler(BaseHTTPRequestHandler):
                 extra=catalog.state(db)
                 extra.update(organizer.state(db))
                 extra['homes']=[]
-                for r in db.execute("""SELECT id,title,sha,share,length(content) AS size,
-                    json_remove(summary, '$.avatar') AS summary,
-                    json_type(summary, '$.avatar')='object' AS has_avatar
-                    FROM homes ORDER BY rowid DESC"""):
+                for r in db.execute("""SELECT h.id,h.title,h.sha,h.share,length(h.content) AS size,
+                    json_remove(h.summary, '$.avatar') AS summary,
+                    json_type(h.summary, '$.avatar')='object' AS has_avatar, c.stats AS check_stats
+                    FROM homes h LEFT JOIN home_checks c ON c.home_id=h.id AND c.sha=h.sha AND c.revision=?
+                    ORDER BY h.rowid DESC""", (library.HOME_CHECK_REVISION,)):
                     h=dict(r)
                     h['summary']=json.loads(h['summary'])
+                    check_stats = h.pop('check_stats')
+                    if check_stats:
+                        h['summary'].update(json.loads(check_stats))
                     h['has_avatar']=bool(h['has_avatar'])
                     extra['homes'].append(h)
                 extra['rules']=[dict(r) for r in db.execute('SELECT * FROM folder_rules ORDER BY position')]

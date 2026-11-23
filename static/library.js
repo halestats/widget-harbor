@@ -70,26 +70,116 @@ async function previewLink(obj) {
 
 function homeCard(h) {
   const summary=h.summary;
+  const checkSummary=summary.version?[
+    `v${summary.version}`, `${summary.html_cards} 张 HTML 卡片`,
+    summary.scripts&&`${summary.scripts} 个内置脚本`, summary.local_items&&`${summary.local_items} 处本机依赖`,
+    summary.warnings&&`${summary.warnings} 条提示`
+  ].filter(Boolean).join(' · '):'';
   const avatar=h.has_avatar
     ? `<img src="/api/homes/${h.id}/avatar?v=${h.sha}" alt="">`
     : esc(Array.from(h.title.trim())[0]?.toUpperCase()||'首');
   const actions=[
     ['home-share',h.share?'复制分享链接':'开启分享'],
     ['home-replace','替换文件'],['home-edit','重命名'],
-    ['home-references','查看模块引用'],
-    ...(h.share?[['home-private','关闭分享']]:[]),
+    ['home-check','检查首页'],['home-references','查看模块引用'],
+    ['home-relink','换成 Hub 模块链接'],['home-html','装上／移除 HTML 卡片'],
+    ...(h.share?[['home-rotate','换新分享链接'],['home-private','关闭分享']]:[]),
     ['home-delete','删除首页配置']
   ].map(([action,label])=>actionButton(action,h.id,label,action==='home-delete'?'danger':'')).join('');
   return `<article class="card home-card">
     <div class="home-card-header">
       <span class="module-icon" aria-hidden="true">${avatar}</span>
-      <div class="home-card-info"><h3>${esc(h.title)}</h3><small>${summary.sections} 个栏目 · ${summary.items} 张卡片</small></div>
+      <div class="home-card-info"><h3>${esc(h.title)}</h3><small>${summary.sections} 个栏目 · ${summary.items} 张卡片</small>
+        ${checkSummary?`<small class="home-check-summary${summary.warnings?' has-warnings':''}">${esc(checkSummary)}</small>`:''}</div>
       ${cardTools('',actions)}
     </div>
     <div class="home-card-footer"><small>${sizes(h.size)} · ${h.share?'已分享':'未分享'}</small>
       <a class="secondary home-export" href="/api/homes/${h.id}/file" download>导出 .rex</a>
     </div>
   </article>`;
+}
+
+function showHomeCheck(title, report) {
+  const byId = new Map();
+  for (const module of state.modules) {
+    if(module.kind!=='module'||module.platform==='forward')continue;
+    const matches=byId.get(module.widget_id)||[];
+    matches.push(module);
+    byId.set(module.widget_id,matches);
+  }
+  const lines = [`${title} · Rex 首页包 v${report.version}`];
+  if(report.warnings.length)lines.push('', '检查提示', ...report.warnings);
+  if(report.cards.length)lines.push('', 'HTML 卡片', ...report.cards.map(c=>
+    `${c.position} · ${c.source}${c.filename?' · '+c.filename:''} · ${sizes(c.size)}`));
+  if(report.scripts.length)lines.push('', '内置脚本', ...report.scripts.map(s=>
+    `${s.name} · ${sizes(s.size)}${s.encrypted?' · 加密':''}`));
+  if(report.references.length)lines.push('', '模块对照', ...report.references.map(r=>{
+    const matches=byId.get(r.id)||[];
+    const status=matches.length>1?`本站有 ${matches.length} 个同 ID 模块`:matches.length
+      ?`本站有 ${matches[0].title} · v${matches[0].version}`:'本站暂无同 ID 的 Rex 模块';
+    return `${r.id||'未声明 ID'} · ${r.source} · ${status}`;
+  }));
+  if(report.truncated)lines.push('', '每类最多显示 200 条明细。');
+  lines.push('', '静态检查。实际显示效果请在 Rex 中确认。');
+  modal('检查首页',`<label>检查报告<textarea id="home-check-report" rows="12" readonly></textarea></label>
+    <button id="copy-home-check" class="secondary" type="button">复制全文</button>`,async()=>{},'完成');
+  const field=$('#home-check-report');
+  field.value=lines.join('\n');
+  $('#copy-home-check').onclick=async()=>{
+    try{await navigator.clipboard.writeText(field.value);toast('检查报告已复制');}
+    catch{field.focus();field.select();toast('请手动复制选中的报告');}
+  };
+}
+
+async function editHomePackage(h, url, action) {
+  const plan=await api(url+'/tools');
+  const relink=action==='relink';
+  const available=plan.links.filter(link=>link.target);
+  const missing=plan.links.filter(link=>!link.target);
+  if((relink&&!available.length)||(!relink&&!plan.items.length)){
+    const ids=missing.map(link=>esc(link.widget_id||'未声明 ID')).join('、');
+    const message=relink?`本站没有可替换的同 ID 模块。${ids?'待匹配：'+ids:''}`:'这个首页没有可调整的卡片。';
+    modal(relink?'换成 Hub 模块链接':'装上／移除 HTML 卡片',`<p>${message}</p>`,async()=>{},'完成');
+    return;
+  }
+  const settings=`<label>保存方式<select name="mode"><option value="copy">另存为新首页</option>
+    <option value="replace">覆盖当前首页${h.share?'（分享链接将提供新版）':''}</option></select></label>`;
+  const controls=relink?`<p class="hint">勾选需要更换的本机模块或内置脚本。每个选项会替换该 ID 的所有相关项目。</p>
+    <fieldset class="home-tool-options"><legend>可更换的模块</legend>${available.map((link,i)=>
+      `<label><input type="checkbox" name="selection" value="${i}"><span>${esc(link.target.title)} · v${esc(link.target.version)}<small>${esc(link.widget_id)} · ${link.count} 处</small></span></label>`
+    ).join('')}</fieldset>${missing.length?`<details><summary>本站暂无匹配的模块（${missing.length}）</summary>
+      <p class="hint">${missing.map(link=>esc(link.widget_id||'未声明 ID')).join('、')}</p></details>`:''}`:
+    `<label>栏目及卡片<select name="target_item">${plan.items.map((item,i)=>
+      `<option value="${i}">${esc(item.group)} / ${esc(item.label)}${item.has_html?'（已有 HTML）':''}</option>`
+    ).join('')}</select></label>
+    <label>HTML 卡片文件<input name="html" type="file" accept=".html,.htm,text/html" required></label>
+    <label><input type="checkbox" name="remove">移除所选项目的 HTML 卡片</label>`;
+  modal(relink?'换成 Hub 模块链接':'装上／移除 HTML 卡片',controls+settings,async form=>{
+    const payload={action,expected:plan.expected,mode:form.elements.mode.value,origin:state.site_url};
+    if(relink){
+      const chosen=[...form.querySelectorAll('[name=selection]:checked')].map(input=>available[Number(input.value)]);
+      if(!chosen.length)throw new Error('请至少勾选一个模块');
+      payload.selected=Object.fromEntries(chosen.map(link=>[link.widget_id,link.target.id]));
+    }else{
+      const item=plan.items[Number(form.elements.target_item.value)];
+      Object.assign(payload,{section:item.section,item:item.item,remove:form.elements.remove.checked});
+      if(!payload.remove){
+        const file=form.elements.html.files[0];
+        if(!file||!/[.]html?$/i.test(file.name))throw new Error('请选择 .html 卡片文件');
+        if(file.size>32768)throw new Error('HTML 卡片不能超过 32 KiB');
+        payload.html=await fileData(file,32/1024);
+        payload.filename=file.name;
+      }
+    }
+    await api(url+'/tools','POST',payload);
+    await reload();
+    toast(payload.mode==='copy'?'已另存为新首页':'当前首页已更新');
+  },'生成首页');
+  if(!relink){
+    const remove=$('#dialog [name=remove]');
+    const file=$('#dialog [name=html]');
+    remove.onchange=()=>{file.required=!remove.checked;file.disabled=remove.checked;};
+  }
 }
 
 async function homeAction(action,id) {
@@ -100,19 +190,27 @@ async function homeAction(action,id) {
     const titleField=h?'':`<label>显示名称（可选）<input name="title" maxlength="200" placeholder="默认使用包内名称"></label>`;
     modal(h?'替换首页文件':'上传 Rex 首页包',`${titleField}
       <label>首页文件<input name="file" type="file" accept=".rex" required></label>
-      <p class="hint">${h?'替换「'+esc(h.title)+'」的首页文件。已开启的分享链接会继续指向新版首页。':'支持 Rex 导出的 .rex 首页包，最多 25 MiB。'}</p>`,async form=>{
+      <p class="hint">${h?'替换「'+esc(h.title)+'」的首页文件。已开启的分享链接会继续指向新版首页。':'支持 Rex v1 和 v2 的 .rex 首页包，最多 25 MiB。'}</p>`,async form=>{
       const file=form.elements.file.files[0];
       if(!file||!file.name.toLowerCase().endsWith('.rex'))throw new Error('请选择 Rex 导出的 .rex 首页包');
       const data={data:await fileData(file,25),expected:h?.sha};
       if(!h)data.title=form.elements.title.value;
-      await api(url,h?'PUT':'POST',data);
+      const saved=await api(url,h?'PUT':'POST',data);
       await reload();
-      toast(h?'首页文件已替换':'首页配置已保存');
+      const summary=state.homes.find(row=>row.id===saved.id)?.summary;
+      const result=h?'首页文件已替换':'首页配置已保存';
+      toast(summary?.warnings?`${result}，有 ${summary.warnings} 条提示可在「检查首页」查看`:result);
     },h?'确认替换':'上传保存');
   }else if(action==='home-edit'){
     modal('重命名首页',`<label>显示名称<input name="title" required maxlength="200" value="${esc(h.title)}"></label>`,async form=>{
       await api(url,'PATCH',{title:form.elements.title.value,expected:h.sha});await reload();
     });
+  }else if(action==='home-check'){
+    const report=await api(url+'/check');
+    await reload();
+    showHomeCheck(h.title,report);
+  }else if(action==='home-relink'||action==='home-html'){
+    await editHomePackage(h,url,action==='home-relink'?'relink':'html');
   }else if(action==='home-references'){
     const sources=h.summary.refs.map(r=>{
       const type=r.url.startsWith('file:')?'本地文件':/^https?:/.test(r.url)?'远程网址':'其他引用';
@@ -121,6 +219,12 @@ async function homeAction(action,id) {
     modal('模块引用',`<p>${esc(h.title)} · ${h.summary.refs.length} 条</p>${sources?`<ul class="home-reference-list">${sources}</ul>`:'<p>这个首页包没有模块引用。</p>'}`,async()=>{},'完成');
   }else if(action==='home-share'&&h.share){
     await copy(state.site_url+'/homes/'+h.share+'.rex');
+  }else if(action==='home-rotate'){
+    modal('换新分享链接',`<p>确认后旧链接立即失效，可在菜单中复制新链接。</p>`,async()=>{
+      await api(url+'/share','POST',{expected:h.sha,rotate:true,expected_share:h.share});
+      await reload();
+      toast('分享链接已更换');
+    },'换新链接');
   }else{
     const remove=action==='home-delete', enable=action==='home-share';
     modal(remove?'删除首页配置':enable?'公开分享首页包':'关闭首页分享',

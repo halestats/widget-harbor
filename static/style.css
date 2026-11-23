@@ -322,6 +322,12 @@ footer{flex-wrap:wrap}.github-link{flex-shrink:0}
   white-space:normal; overflow-wrap:anywhere; font-size:15px; margin:0 0 4px;
 }
 .home-card-info small,.home-card-footer small { color:var(--muted); }
+.home-check-summary { display:block; margin-top:3px; }
+.home-card-info .home-check-summary.has-warnings { color:#a35d18; }
+[data-theme="dark"] .home-card-info .home-check-summary.has-warnings { color:#f4b978; }
+.home-tool-options { max-height:15rem; overflow:auto; padding:8px 12px; border:1px solid var(--border); border-radius:8px; }
+.home-tool-options label { display:flex; align-items:flex-start; gap:8px; overflow-wrap:anywhere; }
+.home-tool-options small { display:block; color:var(--muted); }
 .home-card-footer {
   display:flex; justify-content:space-between; align-items:center; gap:10px;
   border-top:1px solid var(--border); margin-top:12px; padding-top:10px;

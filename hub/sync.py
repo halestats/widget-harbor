@@ -95,7 +95,9 @@ class Scheduler(threading.Thread):
         handed_off = False
         try:
             with self.server.store.connect() as db:
-                collection = next((c for c in self.server.store.collections(db) if c['slug'] == slug), None)
+                collection = db.execute('''SELECT s.source_url, COALESCE(s.last_attempt, 0) AS last_attempt
+                    FROM collections c LEFT JOIN collection_sync s ON s.slug=c.slug WHERE c.slug=?''',
+                                        (slug,)).fetchone()
                 if not collection:
                     return
                 remote = collection['source_url'] or db.execute(

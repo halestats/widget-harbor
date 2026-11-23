@@ -1,14 +1,16 @@
-# 升级至 v1.5.1
+# 升级至 v1.6.0
 
 保留现有目录和 `.env`，不要重装。以下示例的安装目录 `/opt/widget-harbor` 必须替换为实际旧目录。
 
 ```sh
 stage=$(mktemp -d)
-tar -xzf widget-harbor-v1.5.1.tar.gz -C "$stage"
+tar -xzf widget-harbor-v1.6.0.tar.gz -C "$stage"
 sudo sh "$stage/widget-harbor/scripts/upgrade.sh" /opt/widget-harbor
 ```
 
 升级器自动识别已有基础配置和存储覆盖文件，支持命名卷、通用 bind 挂载以及旧版覆盖文件。数据库先在线备份，构建完成后只重建本服务。安装目录、公开地址、允许来源和数据挂载保持原配置。
+
+v1.6.0 会自动创建首页检查缓存。已有首页包、首页 ID 和分享链接保持原状。首次检查旧首页后会缓存报告。
 
 新增图片独立存储、资源文件夹、全站自定义排序。旧版合集引用的本地图标会从资源列表隐藏，但旧下载链接仍有效。图片保存在 `/data/images/`，并有数据库副本，缓存目录丢失可重建。远程图标首次保存时缓存，之后最多每天检查更新；失败时继续使用旧缓存。远程下载沿用公开 HTTP/HTTPS 地址校验，最大图片 1 MiB。
 
