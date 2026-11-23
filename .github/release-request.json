@@ -1,5 +1,5 @@
 {
-  "tag": "v1.5.0",
-  "commit": "a3cc934c4c4623986be7bb2be4426bab0263adad",
-  "notes": "## 本次更新\n- 移动端新增底部导航，模块、合集和资源统一横条卡片操作，并支持拖动排序与桌面框选。\n- 模块支持分组和所属合集标签，合集成员可搜索和查看。设置新增自动分类、文件名清理、旧链接整理和重复模块检查。\n- 「合集/首页」可管理链接来源和 Rex 首页包，支持查看内置头像（最大 5 MiB）、原样导出、替换和可撤销分享。\n- 远程刷新支持条件请求、合集下载续用和失败来源重试。模块替换可预览文件并填写版本。\n\n## 升级\n解压发行包后，用 `scripts/upgrade.sh` 指向现有安装目录。升级器会在线备份数据库并校验，构建完成后仅重建 Widget Harbor 服务。保留 `.env`、挂载和公开地址。\n\n升级步骤见 [升级指南](https://github.com/halestats/widget-harbor/blob/v1.5.0/docs/UPGRADE-1.4.md)。镜像为 `ghcr.io/halestats/widget-harbor:1.5.0`。"
+  "tag": "v1.5.1",
+  "commit": "2c4a7d98945258040c8128eeef3b0cfa714f4650",
+  "notes": "## 修复\n- 控制台只查询模块元数据，解决登录后 SQLite 临时空间不足造成的 HTTP 500。\n- CI 和发行验证覆盖 16 MiB 的容器临时空间、28 MiB 的测试文件和完整的控制台加载流程。\n- 五分钟内连续三次控制台加载返回 HTTP 500 时，容器日志写入可监控的告警。\n\n保留已有配置和数据，按[升级指南](https://github.com/halestats/widget-harbor/blob/v1.5.1/docs/UPGRADE-1.4.md)更新。"
 }
