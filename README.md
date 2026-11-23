@@ -18,7 +18,7 @@
 
 ## 快速开始
 
-当前稳定版 **v1.5.0**：[下载发行包](https://github.com/halestats/widget-harbor/releases/latest) · [Linux 安装](docs/INSTALL.md) · [升级已有部署](docs/UPGRADE-1.4.md)。
+当前稳定版 **v1.5.1**：[下载发行包](https://github.com/halestats/widget-harbor/releases/latest) · [Linux 安装](docs/INSTALL.md) · [升级已有部署](docs/UPGRADE-1.4.md)。
 
 需要 Docker Engine 和 Docker Compose v2 或更新版本。下载本仓库后，在项目根目录执行：
 

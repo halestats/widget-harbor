@@ -20,6 +20,8 @@ from .network import fetch
 ROOT = Path(__file__).resolve().parent.parent
 MAX_BODY = 64 * 1024 * 1024
 LOG = logging.getLogger('widget-harbor')
+STATE_ALERT_WINDOW = 300
+STATE_ALERT_THRESHOLD = 3
 
 
 class HubServer(ThreadingHTTPServer):
@@ -55,6 +57,9 @@ class HubServer(ThreadingHTTPServer):
         self.sessions, self.failures = {}, {}
         self.auth_lock = threading.Lock()
         self.import_lock = threading.Lock()
+        self.state_alert_lock = threading.Lock()
+        self.state_failures = 0
+        self.state_failure_start = 0.0
         self.slots = threading.BoundedSemaphore(24)
         super().__init__(address, Handler)
         from .sync import Scheduler
@@ -64,6 +69,20 @@ class HubServer(ThreadingHTTPServer):
     def server_close(self):
         self.scheduler.stop.set()
         super().server_close()
+
+    def record_state_result(self, error_type=None):
+        with self.state_alert_lock:
+            if error_type is None:
+                self.state_failures = 0
+                return
+            now = time.monotonic()
+            if self.state_failures == 0 or now - self.state_failure_start >= STATE_ALERT_WINDOW:
+                self.state_failure_start = now
+                self.state_failures = 0
+            self.state_failures += 1
+            if self.state_failures == STATE_ALERT_THRESHOLD:
+                LOG.error('ALERT endpoint=/api/state status=500 error_type=%s failures=%d window_seconds=%d',
+                          error_type, self.state_failures, STATE_ALERT_WINDOW)
 
     def process_request(self, request, client_address):
         if not self.slots.acquire(blocking=False):
@@ -618,8 +637,17 @@ class Handler(BaseHTTPRequestHandler):
             threading.Thread(target=self.server.scheduler.run_job,args=(slug,retry_job),daemon=True).start()
             return self.send(202,{'ok':True})
         if path == '/api/state' and method == 'GET':
+            self.loading_state = True
             with store.connect() as db:
-                modules = [{k:v for k,v in dict(r).items() if k != 'content'} for r in db.execute('SELECT * FROM modules WHERE id NOT IN (SELECT module_id FROM legacy_icons) ORDER BY updated_at DESC, rowid DESC')]
+                # Keep module bodies out of SQLite's temporary sort files.
+                modules = [dict(row) for row in db.execute('''
+                    SELECT id, widget_id, filename, title, description, version, author,
+                           requiredVersion, icon, site, kind, platform, source_url, source_group,
+                           encrypted, size, sha256, updated_at
+                    FROM modules
+                    WHERE id NOT IN (SELECT module_id FROM legacy_icons)
+                    ORDER BY updated_at DESC, rowid DESC
+                ''')]
                 schedules={r['module_id']:dict(r) for r in db.execute('SELECT * FROM file_sync')}
                 for m in modules:m['refresh']=schedules.get(m['id'],{})
                 collections = store.collections(db)
@@ -637,7 +665,9 @@ class Handler(BaseHTTPRequestHandler):
                 extra['rules']=[dict(r) for r in db.execute('SELECT * FROM folder_rules ORDER BY position')]
                 extra['previous']={r['module_id']:json.loads(r['info'])['version'] for r in db.execute('SELECT module_id,info FROM module_previous WHERE expires>?',(int(time.time()),))}
                 for c in collections:c['icon_display']=catalog.display(db,c['icon'])
-            return self.send(200, {'modules':modules, 'collections':collections, 'site_url':self.server.site_url,**extra})
+            self.send(200, {'modules':modules, 'collections':collections, 'site_url':self.server.site_url,**extra})
+            self.server.record_state_result()
+            return
         if path == '/api/backup' and method == 'GET':
             return self.send(200, store.backup(), headers={'Content-Disposition':'attachment; filename="widget-harbor-backup.json"'})
         if path == '/api/restore' and method == 'POST':
@@ -734,14 +764,20 @@ class Handler(BaseHTTPRequestHandler):
         raise Problem('接口不存在', 404)
 
     def handle_request(self):
+        self.loading_state = False
         try:
             self.dispatch()
         except Problem as exc:
             self.send(exc.status, {'error':str(exc)})
         except (BrokenPipeError, ConnectionResetError, TimeoutError):
             pass
-        except Exception:
-            LOG.exception('Request failed')
+        except Exception as exc:
+            if self.loading_state:
+                error_type = getattr(exc, 'sqlite_errorname', type(exc).__name__)
+                LOG.exception('Request failed endpoint=/api/state status=500 error_type=%s', error_type)
+                self.server.record_state_result(error_type)
+            else:
+                LOG.exception('Request failed')
             self.send(500, {'error':'服务器错误，请检查服务日志'})
 
     do_GET = do_HEAD = do_POST = do_PUT = do_PATCH = do_DELETE = handle_request

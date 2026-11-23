@@ -1,10 +1,10 @@
-# 升级至 v1.5.0
+# 升级至 v1.5.1
 
 保留现有目录和 `.env`，不要重装。以下示例的安装目录 `/opt/widget-harbor` 必须替换为实际旧目录。
 
 ```sh
 stage=$(mktemp -d)
-tar -xzf widget-harbor-v1.5.0.tar.gz -C "$stage"
+tar -xzf widget-harbor-v1.5.1.tar.gz -C "$stage"
 sudo sh "$stage/widget-harbor/scripts/upgrade.sh" /opt/widget-harbor
 ```
 

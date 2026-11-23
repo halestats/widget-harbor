@@ -39,3 +39,7 @@ jobs:
             sleep 1
           done
           exit 1
+      - name: Verify login and console with the production temporary storage limit
+        run: |
+          docker run --rm -i --network none --read-only --tmpfs /tmp:size=16m,noexec,nosuid \
+            -e SQLITE_TMPDIR=/tmp --entrypoint python widget-harbor:ci - < tests/console_smoke.py

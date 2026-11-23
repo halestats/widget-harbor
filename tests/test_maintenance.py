@@ -1,7 +1,9 @@
 import base64
+from contextlib import contextmanager
 import io
 import json
 from pathlib import Path
+import sqlite3
 import struct
 import time
 import unittest
@@ -31,6 +33,45 @@ class MaintenanceTests(unittest.TestCase):
         code,_,data=self.request(path,method,body)
         self.assertIn(code,(200,201,202),data)
         return json.loads(data)
+
+    def test_state_lists_metadata_without_reading_module_bodies(self):
+        self.login()
+        first = self.upload(filename='first.js')
+        second = self.upload(filename='second.js')
+        connect = self.server.store.connect
+        with connect() as db:
+            db.execute('UPDATE modules SET updated_at=100')
+
+        def authorize(action, table, column, *_):
+            if action == sqlite3.SQLITE_READ and (table, column) == ('modules', 'content'):
+                return sqlite3.SQLITE_DENY
+            return sqlite3.SQLITE_OK
+
+        @contextmanager
+        def metadata_only_connection():
+            with connect() as db:
+                db.set_authorizer(authorize)
+                yield db
+
+        with patch.object(self.server.store, 'connect', metadata_only_connection):
+            modules = self.call('/api/state', method='GET')['modules']
+
+        self.assertEqual([module['id'] for module in modules], [second, first])
+        self.assertTrue(all(module['size'] > 0 and 'content' not in module for module in modules))
+
+    def test_state_alerts_on_third_failure_until_a_success(self):
+        self.login()
+        with self.assertLogs('widget-harbor', level='ERROR') as logs:
+            for _ in range(2):
+                with patch.object(self.server.store, 'connect', side_effect=sqlite3.OperationalError):
+                    for _ in range(4):
+                        self.assertEqual(self.request('/api/state')[0], 500)
+                self.assertEqual(self.request('/api/state')[0], 200)
+
+        alerts = [entry for entry in logs.output if 'ALERT endpoint=/api/state' in entry]
+        self.assertEqual(len(alerts), 2)
+        for alert in alerts:
+            self.assertIn('status=500 error_type=OperationalError failures=3', alert)
 
     def test_home_share_replace_backup_revoke(self):
         self.login()

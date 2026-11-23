@@ -19,6 +19,11 @@ jobs:
           node-version: '22'
       - run: python -m unittest discover -s tests -v
       - run: node tests/test_ui.cjs
+      - run: docker build -t widget-harbor:ci .
+      - name: Verify login and console with the production temporary storage limit
+        run: |
+          docker run --rm -i --network none --read-only --tmpfs /tmp:size=16m,noexec,nosuid \
+            -e SQLITE_TMPDIR=/tmp --entrypoint python widget-harbor:ci - < tests/console_smoke.py
       - name: Package and upload
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
