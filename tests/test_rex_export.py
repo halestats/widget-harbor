@@ -42,3 +42,18 @@ class RexExportTests(unittest.TestCase):
         self.assertEqual(result['widgets'][0]['icon'],'https://example.com/icon.png')
         self.assertEqual(result['widgets'][0]['site'],'https://example.com')
         self.assertEqual(result['widgets'][0]['description'],'说明')
+
+    def test_encrypted_identity_correction_preserves_file(self):
+        import base64
+        self.login()
+        content=b'REXENC\nopaque-test-payload'
+        status,_,raw=self.request('/api/modules','POST',{'filename':'encrypted.js','data':base64.b64encode(content).decode(),'kind':'module','platform':'rex'})
+        self.assertEqual(status,201)
+        ident=json.loads(raw)['id']
+        status,_,_=self.request('/api/modules/'+ident,'PUT',{'widget_id':'confirmed.widget','title':'Confirmed','version':'2.1.3'})
+        self.assertEqual(status,200)
+        self.request('/api/collections','POST',{'slug':'encrypted-test','title':'Encrypted test','module_ids':[ident]})
+        widget=json.loads(self.request('/api/collections/encrypted-test.rex')[2])['widgets'][0]
+        self.assertEqual(widget['id'],'confirmed.widget')
+        self.assertEqual(widget['version'],'2.1.3')
+        self.assertEqual(self.request('/api/modules/'+ident+'/raw')[2],content)

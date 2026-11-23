@@ -27,8 +27,26 @@ cp -p .env "$base" "$backup/"
 if [ -n "$override" ]; then cp -p "$override" "$backup/"; fi
 tar -czf "$backup/source.tar.gz" hub static Dockerfile scripts
 # SQLite online backup; no interruption of the existing service during image build.
-compose exec -T hub python -c "import sqlite3; s=sqlite3.connect('/data/hub.sqlite3'); d=sqlite3.connect('/tmp/upgrade.sqlite3'); s.backup(d); d.close(); s.close()"
-compose exec -T hub cat /tmp/upgrade.sqlite3 > "$backup/hub.sqlite3.tmp"
+compose exec -T hub python - > "$backup/hub.sqlite3.tmp" <<'PY'
+from contextlib import closing
+from pathlib import Path
+import shutil
+import sqlite3
+import sys
+import tempfile
+
+source = Path('/data/hub.sqlite3')
+# The container's /tmp is limited to 16 MiB. Stage the snapshot on the data volume.
+with tempfile.TemporaryDirectory(prefix='.upgrade-', dir=source.parent) as directory:
+    snapshot = Path(directory) / source.name
+    with closing(sqlite3.connect(source.as_uri() + '?mode=ro', uri=True)) as db:
+        with closing(sqlite3.connect(snapshot)) as copy:
+            db.backup(copy)
+            if copy.execute('PRAGMA quick_check').fetchone() != ('ok',):
+                raise SystemExit('数据库备份完整性校验失败，停止更新')
+    with snapshot.open('rb') as file:
+        shutil.copyfileobj(file, sys.stdout.buffer)
+PY
 [ -s "$backup/hub.sqlite3.tmp" ] || { echo "数据库备份为空，停止更新"; exit 1; }
 mv "$backup/hub.sqlite3.tmp" "$backup/hub.sqlite3"
 compose exec -T hub python -c "from pathlib import Path; import sys; p=Path('/data/admin-auth.json'); sys.stdout.buffer.write(p.read_bytes() if p.exists() else b'')" > "$backup/admin-auth.json"

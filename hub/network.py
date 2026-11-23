@@ -67,7 +67,21 @@ def destination(url):
     return parsed, host, port, addresses[0]
 
 
-def fetch(url):
+class Download(tuple):
+    """A (content, final_url) pair with optional HTTP cache validators."""
+
+    def __new__(cls, content, url, etag='', modified=''):
+        result = super().__new__(cls, (content, url))
+        result.etag = etag
+        result.modified = modified
+        return result
+
+
+def valid_header(value, limit):
+    return value if isinstance(value, str) and 0 < len(value) <= limit and all(' ' <= c <= '~' for c in value) else ''
+
+
+def fetch(url, *, validators=None):
     deadline = time.monotonic() + 40
     for _ in range(5):
         parsed, host, port, addr = destination(url)
@@ -89,8 +103,20 @@ def fetch(url):
             host_header = f'[{host}]' if ':' in host else host
             if port != (443 if parsed.scheme == 'https' else 80):
                 host_header += ':' + str(port)
-            conn.request('GET', target, headers={'Host':host_header, 'User-Agent':'WidgetHarbor/1.0', 'Accept-Encoding':'identity'})
+            headers = {'Host':host_header, 'User-Agent':'WidgetHarbor/1.0', 'Accept-Encoding':'identity'}
+            # Validators belong to the URL that returned them, including after a redirect.
+            if validators and validators['final_url'] == url:
+                if etag := valid_header(validators['etag'], 1024):
+                    headers['If-None-Match'] = etag
+                if modified := valid_header(validators['modified'], 128):
+                    headers['If-Modified-Since'] = modified
+            conn.request('GET', target, headers=headers)
             response = conn.getresponse()
+            etag = valid_header(response.getheader('ETag'), 1024)
+            modified = valid_header(response.getheader('Last-Modified'), 128)
+            if response.status == 304 and ('If-None-Match' in headers or 'If-Modified-Since' in headers):
+                return Download(None, url, etag or headers.get('If-None-Match', ''),
+                                modified or headers.get('If-Modified-Since', ''))
             if response.status in (301, 302, 303, 307, 308):
                 location = response.getheader('Location')
                 if not location:
@@ -114,7 +140,7 @@ def fetch(url):
                 if size > MAX_FILE:
                     raise Problem('远程文件超过 5 MiB')
                 chunks.append(chunk)
-            return b''.join(chunks), url
+            return Download(b''.join(chunks), url, etag, modified)
         except (OSError, http.client.HTTPException) as exc:
             raise Problem('远程下载失败：' + type(exc).__name__, 502) from None
         finally:

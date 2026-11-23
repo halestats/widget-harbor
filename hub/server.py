@@ -13,6 +13,7 @@ from http.cookies import SimpleCookie, CookieError
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit, unquote, quote, urljoin
+from . import library, organizer
 from .core import Store, Problem, prepare_module, text, MAX_FILE
 from .network import fetch
 
@@ -265,6 +266,8 @@ class Handler(BaseHTTPRequestHandler):
                 data = base64.b64decode(obj.get('data', ''), validate=True)
             except (ValueError, TypeError):
                 raise Problem('文件编码无效') from None
+        if obj.get('expected_sha') and hashlib.sha256(data).hexdigest()!=obj['expected_sha']:
+            raise Problem('远程文件在预览后变化，请重新预览',409)
         if not data or len(data) > MAX_FILE:
             raise Problem('导入文件不能为空且不能超过 5 MiB')
         is_manifest = obj.get('kind') != 'asset' and (filename.lower().endswith(('.fwd', '.rex', '.json')) or obj.get('manifest') is True)
@@ -277,7 +280,9 @@ class Handler(BaseHTTPRequestHandler):
             with self.server.store.connect() as db:
                 self.server.store.save_module(db, module)
                 if module['kind'] == 'asset':
-                    self.server.store.catalog.move(db, [module['id']], text(obj.get('folder_id', ''), 32))
+                    folder=text(obj.get('folder_id', ''), 32)
+                    self.server.store.catalog.move(db,[module['id']],folder)
+                    if not folder:library.classify_new(db,module)
             return {'id':module['id']}
         try:
             manifest = json.loads(data)
@@ -334,11 +339,17 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(200, {'status':'ok'})
             if path == '/favicon.svg':
                 return self.send(302, b'', headers={'Location':'/logo.png'})
-            if path in ('/', '/app.js', '/style.css', '/logo.png'):
+            if path in ('/', '/library.js', '/organizer.js', '/app.js', '/style.css', '/logo.png'):
                 filename = 'index.html' if path == '/' else path[1:]
                 mime = mimetypes.guess_type(filename)[0] or 'application/octet-stream'
                 return self.send(200, (ROOT/'static'/filename).read_bytes(), mime if filename.endswith('.png') else mime+'; charset=utf-8')
             import re
+            home_share=re.fullmatch(r'/homes/([a-f0-9]{48})\.rex',path)
+            if home_share:
+                with self.server.store.connect() as db:
+                    row=db.execute('SELECT content FROM homes WHERE share=?',(home_share[1],)).fetchone()
+                if not row:raise Problem('首页分享不存在',404)
+                return self.send(200,row[0],'application/octet-stream',{'Content-Disposition':'attachment; filename="home.rex"'})
             image_match=re.fullmatch(r'/images/([a-f0-9]{64})',path)
             if image_match:
                 with self.server.store.connect() as db:row=db.execute('SELECT * FROM images WHERE id=?',(image_match[1],)).fetchone()
@@ -370,6 +381,123 @@ class Handler(BaseHTTPRequestHandler):
             return self.change_password(self.body())
         store = self.server.store
         catalog=store.catalog
+        import re
+        if path == '/api/module-groups' and method == 'POST':
+            with store.connect() as db:
+                organizer.change_group(db, self.body())
+            return self.send(200, {'ok': True})
+        member = re.fullmatch(r'/api/collections/([\w-]+)/members/([a-f0-9]{32})', path)
+        if member and method == 'POST':
+            self.body()
+            with store.connect() as db:
+                organizer.add_to_collection(db, member[1], member[2])
+            return self.send(200, {'ok': True})
+        tool = re.fullmatch(r'/api/organizer/(rules|filenames|legacy|remove-rule)',path)
+        if tool and method=='POST':
+            obj=self.body()
+            with store.connect() as db:
+                result=organizer.operate(db,tool[1],obj)
+            return self.send(200,result)
+        if path == '/api/maintenance/preview' and method == 'POST':
+            obj = self.body()
+            url = text(obj.get('url',''),4000)
+            if url:
+                data, final = fetch(url)
+                filename = unquote(urlsplit(final).path.rsplit('/',1)[-1]) or 'widget.js'
+                obj.update(filename=filename,data=base64.b64encode(data).decode())
+                if obj.get('kind') == 'asset':
+                    return self.send(200,dict(type='asset',filename=filename,sha256=hashlib.sha256(data).hexdigest()))
+                expects_manifest = obj.get('manifest') or filename.lower().endswith(('.rex','.fwd','.json'))
+                manifest = None
+                if expects_manifest or data.lstrip().startswith(b'{'):
+                    try:
+                        manifest = json.loads(data)
+                    except (ValueError, UnicodeError):
+                        if expects_manifest:
+                            raise Problem('订阅内容不是有效 JSON') from None
+                if expects_manifest or (isinstance(manifest,dict) and 'widgets' in manifest):
+                    widgets = manifest.get('widgets') if isinstance(manifest,dict) else None
+                    if not isinstance(widgets,list) or not 1<=len(widgets)<=50:
+                        raise Problem('导入订阅须包含 1–50 个 widgets')
+                    return self.send(200,dict(type='collection',title=manifest.get('title') or filename,
+                                              count=len(widgets),sha256=hashlib.sha256(data).hexdigest()))
+                if not filename.lower().endswith('.js'):
+                    obj['filename']='widget.js'
+            m = prepare_module(obj)
+            with store.connect() as db:
+                matches = library.candidates(db,m)
+            return self.send(200,dict(type='module',filename=m['filename'],title=m['title'],
+                                      version=m['version'],encrypted=bool(m['encrypted']),matches=matches,sha256=m['sha256'],
+                                      **({'data':obj['data']} if url else {})))
+        revert = re.fullmatch(r'/api/modules/([a-f0-9]{32})/rollback',path)
+        if revert and method=='POST':
+            obj=self.body()
+            with store.connect() as db:
+                library.rollback(store, db, revert[1], obj.get('expected'))
+            return self.send(200,{'ok':True})
+        avatar=re.fullmatch(r'/api/homes/([a-f0-9]{32})/avatar',path)
+        if avatar and method in ('GET','HEAD'):
+            with store.connect() as db:
+                row=db.execute('SELECT summary FROM homes WHERE id=?',(avatar[1],)).fetchone()
+            img=json.loads(row[0]).get('avatar') if row else None
+            if not img:raise Problem('没有首页头像',404)
+            return self.send(200,base64.b64decode(img['data']),img['mime'])
+        home_file = re.fullmatch(r'/api/homes/([a-f0-9]{32})/file', path)
+        if home_file and method in ('GET', 'HEAD'):
+            with store.connect() as db:
+                row = db.execute('SELECT title,content FROM homes WHERE id=?', (home_file[1],)).fetchone()
+            if not row:
+                raise Problem('首页不存在', 404)
+            filename = re.sub(r'[/\\]', '-', row['title'])
+            if not filename.lower().endswith('.rex'):
+                filename += '.rex'
+            disposition = "attachment; filename=home.rex; filename*=UTF-8''" + quote(filename, safe='')
+            return self.send(200, row['content'], 'application/octet-stream', {'Content-Disposition':disposition})
+        home = re.fullmatch(r'/api/homes/([a-f0-9]{32})(/share)?',path)
+        if (path=='/api/homes' and method=='POST') or home:
+            obj=self.body() if method in ('POST','PUT','PATCH') else {}
+            with store.connect() as db:
+                db.execute('BEGIN IMMEDIATE')
+                if not home:
+                    ident=library.save_home(db,obj)
+                else:
+                    ident=home[1]
+                    row=db.execute('SELECT sha,share,title FROM homes WHERE id=?',(ident,)).fetchone()
+                    if not row:raise Problem('首页不存在',404)
+                    if obj.get('expected')!=row['sha'] and method!='DELETE':
+                        raise Problem('首页已更新，请刷新',409)
+                    if home[2] and method=='POST':
+                        token=(row['share'] or secrets.token_hex(24)) if obj.get('enabled') is True else None
+                        db.execute('UPDATE homes SET share=? WHERE id=?',(token,ident))
+                    elif not home[2] and method=='PUT':
+                        obj.setdefault('title', row['title'])
+                        library.save_home(db,obj,ident)
+                    elif not home[2] and method=='PATCH':
+                        title=text(obj.get('title',''),200).strip()
+                        if not title:raise Problem('请输入首页名称')
+                        db.execute('UPDATE homes SET title=? WHERE id=?',(title,ident))
+                    elif not home[2] and method=='DELETE':db.execute('DELETE FROM homes WHERE id=?',(ident,))
+                    else:raise Problem('不支持该请求',405)
+            return self.send(200,{'id':ident})
+        if path in ('/api/folder-rules/preview','/api/folder-rules/apply','/api/folder-rules/remove') and method=='POST':
+            obj=self.body()
+            with store.connect() as db:
+                db.execute('BEGIN IMMEDIATE')
+                if path.endswith('/remove'):
+                    db.execute('DELETE FROM folder_rules WHERE position=?',(obj.get('position'),))
+                    return self.send(200,{'ok':True})
+                pattern=text(obj.get('pattern',''),180).strip()
+                folder=text(obj.get('folder',''),32)
+                rows=library.classify(db,pattern,folder)
+                token=hashlib.sha256(json.dumps([pattern,folder,rows]).encode()).hexdigest()
+                if path.endswith('/preview'):
+                    return self.send(200,dict(rows=rows,token=token))
+                if token!=obj.get('token'):raise Problem('文件列表已变化，请重新预览',409)
+                db.executemany('INSERT OR REPLACE INTO asset_locations VALUES (?,?)',[(r['id'],folder) for r in rows])
+                if obj.get('auto') and not db.execute('SELECT 1 FROM folder_rules WHERE pattern=? AND folder=?',(pattern,folder)).fetchone():
+                    db.execute('INSERT INTO folder_rules(pattern,folder) VALUES (?,?)',(pattern,folder))
+            return self.send(200,{'count':len(rows)})
+
         if path=='/api/images' and method=='POST':
             obj=self.body()
             try:data=base64.b64decode(obj.get('data',''),validate=True)
@@ -379,7 +507,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(201,{'url':url})
         if path=='/api/order' and method=='PUT':
             obj=self.body()
-            with store.connect() as db:catalog.reorder(db,obj.get('scope'),obj.get('ids'))
+            with store.connect() as db:
+                db.execute('BEGIN IMMEDIATE')
+                catalog.reorder(db,obj.get('scope'),obj.get('ids'))
             return self.send(200,{'ok':True})
         if path=='/api/assets/move' and method=='POST':
             obj=self.body()
@@ -412,6 +542,36 @@ class Handler(BaseHTTPRequestHandler):
                     db.execute('INSERT OR REPLACE INTO profile VALUES (1, ?)', (avatar,))
                 row = db.execute('SELECT avatar FROM profile WHERE id=1').fetchone()
             return self.send(200, {'avatar':row[0] if row else ''})
+        if path == '/api/sources/retry' and method == 'POST':
+            obj = self.body()
+            ident = text(obj.get('id', ''), 32)
+            slug = text(obj.get('slug', ''), 64)
+            if ident and slug:
+                raise Problem('请选择一个失败的来源')
+            if not self.server.import_lock.acquire(blocking=False):
+                raise Problem('已有导入或刷新正在进行，请稍后重试', 409)
+            try:
+                with store.connect() as db:
+                    slugs = [] if ident else [r[0] for r in db.execute(
+                        "SELECT slug FROM collection_sync WHERE error!='' AND (?='' OR slug=?) ORDER BY last_attempt LIMIT 500",
+                        (slug, slug))]
+                    ids = [] if slug else [r[0] for r in db.execute(
+                        """SELECT module_id FROM file_sync JOIN modules ON id=module_id
+                            WHERE error!='' AND source_url!='' AND (?='' OR id=?)
+                            AND id NOT IN (SELECT module_id FROM legacy_icons)
+                            ORDER BY last_attempt LIMIT ?""", (ident, ident, 500-len(slugs)))]
+                count = len(ids)+len(slugs)
+                if count:
+                    self.server.cancel_import.clear()
+                    with self.server.job_lock:
+                        self.server.job={'id':secrets.token_hex(16),'status':'running','done':0,'total':count}
+                    threading.Thread(target=self.server.scheduler.run_sources,args=(ids,slugs),daemon=True).start()
+            except Exception:
+                self.server.import_lock.release()
+                raise
+            if not count:
+                self.server.import_lock.release()
+            return self.send(202 if count else 200, {'queued':count})
         if path == '/api/modules/batch' and method == 'POST':
             obj = self.body()
             ids = obj.get('ids')
@@ -445,6 +605,7 @@ class Handler(BaseHTTPRequestHandler):
         refresh_match = re.fullmatch(r'/api/collections/([\w-]+)/refresh', path)
         if refresh_match and method == 'POST':
             slug = refresh_match[1]
+            retry_job=self.body().get("retry_job") if self.headers.get("Content-Length","0")!="0" else None
             if not self.server.import_lock.acquire(blocking=False):
                 raise Problem('已有导入或刷新正在进行，请稍后重试',409)
             with store.connect() as db:
@@ -454,7 +615,7 @@ class Handler(BaseHTTPRequestHandler):
             self.server.cancel_import.clear()
             with self.server.job_lock:
                 self.server.job = {'id':secrets.token_hex(16),'status':'running','done':0,'total':0}
-            threading.Thread(target=self.server.scheduler.run_job,args=(slug,),daemon=True).start()
+            threading.Thread(target=self.server.scheduler.run_job,args=(slug,retry_job),daemon=True).start()
             return self.send(202,{'ok':True})
         if path == '/api/state' and method == 'GET':
             with store.connect() as db:
@@ -463,6 +624,18 @@ class Handler(BaseHTTPRequestHandler):
                 for m in modules:m['refresh']=schedules.get(m['id'],{})
                 collections = store.collections(db)
                 extra=catalog.state(db)
+                extra.update(organizer.state(db))
+                extra['homes']=[]
+                for r in db.execute("""SELECT id,title,sha,share,length(content) AS size,
+                    json_remove(summary, '$.avatar') AS summary,
+                    json_type(summary, '$.avatar')='object' AS has_avatar
+                    FROM homes ORDER BY rowid DESC"""):
+                    h=dict(r)
+                    h['summary']=json.loads(h['summary'])
+                    h['has_avatar']=bool(h['has_avatar'])
+                    extra['homes'].append(h)
+                extra['rules']=[dict(r) for r in db.execute('SELECT * FROM folder_rules ORDER BY position')]
+                extra['previous']={r['module_id']:json.loads(r['info'])['version'] for r in db.execute('SELECT module_id,info FROM module_previous WHERE expires>?',(int(time.time()),))}
                 for c in collections:c['icon_display']=catalog.display(db,c['icon'])
             return self.send(200, {'modules':modules, 'collections':collections, 'site_url':self.server.site_url,**extra})
         if path == '/api/backup' and method == 'GET':
@@ -503,7 +676,9 @@ class Handler(BaseHTTPRequestHandler):
             module = prepare_module(payload)
             with store.connect() as db:
                 store.save_module(db, module)
-                if module['kind']=='asset' and payload.get('folder_id'):catalog.move(db,[module['id']],text(payload['folder_id'],32))
+                if module['kind']=='asset':
+                    if payload.get('folder_id'):catalog.move(db,[module['id']],text(payload['folder_id'],32))
+                    else:library.classify_new(db,module)
             return self.send(201, {'id':module['id']})
         import re
         match = re.fullmatch(r'/api/modules/([a-f0-9]{32})(/refresh)?', path)
@@ -521,18 +696,22 @@ class Handler(BaseHTTPRequestHandler):
                     raise Problem('加密模块仅支持替换文件')
                 updated = prepare_module(obj, old)
             elif method == 'POST' and match[2]:
-                if not old['source_url']:
+                changed, _ = self.server.scheduler.refresh_file(ident, fetcher=fetch)
+                if changed is None:
                     raise Problem('该文件没有远程来源')
-                data, _ = fetch(old['source_url'])
-                updated = prepare_module({'data':base64.b64encode(data).decode()}, old)
+                return self.send(200, {'ok':True, 'changed':changed})
             else:
                 raise Problem('不支持该请求', 405)
             with store.connect() as db:
+                db.execute('BEGIN IMMEDIATE')
                 current = store.get_module(db, ident)
-                if current['sha256'] != old['sha256']:
+                if current!=old or (method=='PUT' and obj.get('expected_sha',old['sha256'])!=old['sha256']):
                     raise Problem('文件已被其他操作更新，请刷新页面后重试', 409)
                 store.save_module(db, updated)
-                if method=='PUT' and 'auto_refresh' in obj:
+                if updated['source_url']!=old['source_url']:
+                    db.execute("UPDATE file_sync SET last_attempt=0,last_success=0,error='' WHERE module_id=?", (ident,))
+                    db.execute('DELETE FROM fetch_validators WHERE module_id=?', (ident,))
+                if 'auto_refresh' in obj:
                     if type(obj['auto_refresh']) is not bool:raise Problem('自动刷新设置无效')
                     db.execute('INSERT INTO file_sync(module_id,auto_refresh) VALUES (?,?) ON CONFLICT(module_id) DO UPDATE SET auto_refresh=excluded.auto_refresh',(ident,int(obj['auto_refresh'] and bool(updated['source_url']))))
             return self.send(200, {'ok':True})
@@ -565,7 +744,7 @@ class Handler(BaseHTTPRequestHandler):
             LOG.exception('Request failed')
             self.send(500, {'error':'服务器错误，请检查服务日志'})
 
-    do_GET = do_HEAD = do_POST = do_PUT = do_DELETE = handle_request
+    do_GET = do_HEAD = do_POST = do_PUT = do_PATCH = do_DELETE = handle_request
 
 
 def main():

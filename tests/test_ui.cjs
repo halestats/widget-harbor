@@ -22,7 +22,7 @@ assert.equal(ctx.assetEmptyKind('',2),'folders');assert.equal(ctx.assetEmptyKind
 // Link imports capture the folder where the dialog was opened.
 (async()=>{
  let dialog, posted;
- const c=vm.createContext({page:'assets',currentFolder:'icons',modal:(title,html,submit)=>{dialog={html,submit}},platformField:()=>'',folderOptions:id=>`<option selected value="${id}">Icons</option>`,api:async(path,method,obj)=>{posted=obj},clearTimeout(){},monitorImport(){},toast(){},importTimer:null});
+ const c=vm.createContext({previewLink:async()=>true,page:'assets',currentFolder:'icons',modal:(title,html,submit)=>{dialog={html,submit}},platformField:()=>'',folderOptions:id=>`<option selected value="${id}">Icons</option>`,api:async(path,method,obj)=>{posted=obj},clearTimeout(){},monitorImport(){},toast(){},importTimer:null});
  vm.runInContext(src.slice(src.indexOf('function importLink()'),src.indexOf('function editCollection(')),c);
  c.importLink();assert.match(dialog.html,/<option value="asset" selected>/);assert.match(dialog.html,/name="folder_id"/);
  c.currentFolder='another-folder';

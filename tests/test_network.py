@@ -1,9 +1,9 @@
 import json
 import socket
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from hub.core import Problem
-from hub.network import destination, resolve_fake_ip
+from hub.network import destination, fetch, resolve_fake_ip
 
 
 def addr(ip):
@@ -49,3 +49,25 @@ class FakeIPTests(unittest.TestCase):
                 response.status, response.read.return_value = status, body
                 with self.assertRaises(Problem):
                     resolve_fake_ip('example.com', 443)
+
+
+    def test_conditional_request_uses_validators_only_at_final_url(self):
+        url = 'http://example.com/a'
+        final = 'http://cdn.example.com/file.js'
+        with patch('hub.network.socket.getaddrinfo', return_value=[addr('8.8.8.8')]), \
+             patch('hub.network.socket.socket'), patch('hub.network.http.client.HTTPConnection') as connection:
+            start, target = Mock(), Mock()
+            connection.side_effect = [start, target]
+            redirect = start.getresponse.return_value
+            redirect.status = 302
+            redirect.getheader.side_effect = {'Location':final}.get
+            response = target.getresponse.return_value
+            response.status = 304
+            response.getheader.return_value = None
+            result = fetch(url, validators={'final_url':final,'etag':'"v1"','modified':'Wed, 21 Oct 2015 07:28:00 GMT'})
+            self.assertEqual(result, (None, final))
+            self.assertEqual(result.etag, '"v1"')
+            self.assertNotIn('If-None-Match', start.request.call_args.kwargs['headers'])
+            self.assertEqual(target.request.call_args.kwargs['headers']['If-None-Match'], '"v1"')
+            self.assertIn('If-Modified-Since', target.request.call_args.kwargs['headers'])
+            response.read1.assert_not_called()

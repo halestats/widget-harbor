@@ -19,8 +19,9 @@ CREATE TABLE IF NOT EXISTS legacy_icons (module_id TEXT PRIMARY KEY REFERENCES m
 '''
 
 
-def image_type(data):
-    if not data or len(data)>1024*1024:raise Problem('图片不能为空且不能超过 1 MiB')
+def image_type(data, *, size_limit=1024*1024):
+    if not data or len(data)>size_limit:
+        raise Problem(f'图片不能为空且不能超过 {size_limit//(1024*1024)} MiB')
     if data.startswith(b'\x89PNG\r\n\x1a\n'):return 'image/png'
     if data.startswith(b'\xff\xd8\xff'):return 'image/jpeg'
     if data.startswith(b'RIFF') and data[8:12]==b'WEBP':return 'image/webp'

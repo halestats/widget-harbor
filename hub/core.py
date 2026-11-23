@@ -139,11 +139,24 @@ class Store:
               last_attempt INTEGER NOT NULL DEFAULT 0, last_success INTEGER NOT NULL DEFAULT 0,
               error TEXT NOT NULL DEFAULT '', origin TEXT NOT NULL DEFAULT 'custom');
             CREATE TABLE IF NOT EXISTS file_sync (module_id TEXT PRIMARY KEY REFERENCES modules(id) ON DELETE CASCADE, auto_refresh INTEGER NOT NULL DEFAULT 0, last_attempt INTEGER NOT NULL DEFAULT 0, last_success INTEGER NOT NULL DEFAULT 0, error TEXT NOT NULL DEFAULT '');
+            CREATE TABLE IF NOT EXISTS fetch_validators (
+              module_id TEXT PRIMARY KEY REFERENCES modules(id) ON DELETE CASCADE,
+              url TEXT NOT NULL, final_url TEXT NOT NULL, sha256 TEXT NOT NULL,
+              etag TEXT NOT NULL, modified TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS collection_retries (
+              slug TEXT PRIMARY KEY REFERENCES collections(slug) ON DELETE CASCADE,
+              job_id TEXT NOT NULL, scope TEXT NOT NULL, saved_at INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS collection_retry_files (
+              slug TEXT NOT NULL REFERENCES collection_retries(slug) ON DELETE CASCADE,
+              key TEXT NOT NULL, content BLOB NOT NULL, final_url TEXT NOT NULL,
+              etag TEXT NOT NULL, modified TEXT NOT NULL, PRIMARY KEY(slug,key));
             CREATE TABLE IF NOT EXISTS app_migrations (name TEXT PRIMARY KEY);
             PRAGMA user_version=1;
             ''')
 
-            db.executescript(SCHEMA)
+            from . import library, organizer
+            db.executescript(SCHEMA + library.SCHEMA + organizer.SCHEMA)
+            library.backfill_home_avatars(db)
             self.catalog.migrate_icons(db)
             if 'origin' not in [r[1] for r in db.execute('PRAGMA table_info(collection_sync)')]:
                 db.execute("ALTER TABLE collection_sync ADD COLUMN origin TEXT NOT NULL DEFAULT 'custom'")
@@ -184,9 +197,17 @@ class Store:
         finally:
             db.close()
 
-    def save_module(self, db, module):
+    def save_module(self, db, module, *, organize=True):
+        from .library import keep_previous
+        if module["kind"] == "module":
+            keep_previous(db, module)
+        classify = organize and module["kind"]=="module" and not db.execute("SELECT 1 FROM modules WHERE id=?", (module["id"],)).fetchone()
         keys = list(module)
         db.execute('INSERT INTO modules (' + ','.join(keys) + ') VALUES (' + ','.join('?' for _ in keys) + ') ON CONFLICT(id) DO UPDATE SET ' + ','.join(k+'=excluded.'+k for k in keys if k != 'id'), list(module.values()))
+
+        if classify:
+            from .organizer import on_create
+            on_create(db,module)
 
     def get_module(self, db, ident):
         row = db.execute('SELECT * FROM modules WHERE id=?', (ident,)).fetchone()
@@ -236,6 +257,9 @@ class Store:
         origin = 'imported' if source else obj.get('origin',previous['origin'] if previous else 'custom')
         if origin not in ('imported','custom'):raise Problem('合集类型无效')
         db.execute("INSERT INTO collection_sync(slug,source_url,auto_refresh) VALUES (?,?,?) ON CONFLICT(slug) DO UPDATE SET source_url=excluded.source_url,auto_refresh=excluded.auto_refresh", (slug,source,auto))
+        if previous and previous['source_url'] != source:
+            db.execute("UPDATE collection_sync SET last_attempt=0,last_success=0,error='' WHERE slug=?", (slug,))
+            db.execute('DELETE FROM collection_retries WHERE slug=?', (slug,))
         db.execute('UPDATE collection_sync SET origin=? WHERE slug=?',(origin,slug))
         return slug
 
@@ -247,7 +271,8 @@ class Store:
                 item = dict(row)
                 item['data'] = base64.b64encode(item.pop('content')).decode()
                 modules.append(item)
-            return dict(format='widget-harbor', schema=2, modules=modules, collections=self.collections(db),catalog=self.catalog.export(db),file_sync=[dict(r) for r in db.execute('SELECT * FROM file_sync')])
+            from . import library
+            return dict(maintenance=library.export(db), format='widget-harbor', schema=2, modules=modules, collections=self.collections(db),catalog=self.catalog.export(db),file_sync=[dict(r) for r in db.execute('SELECT * FROM file_sync')])
 
     def restore(self, obj):
         if not isinstance(obj, dict) or obj.get('format') != 'widget-harbor' or obj.get('schema') not in (1,2):
@@ -272,7 +297,7 @@ class Store:
                 if not isinstance(stamp, int) or isinstance(stamp, bool) or not 0 <= stamp <= 2**53:
                     raise Problem('备份更新时间无效')
                 module['updated_at'] = stamp
-                self.save_module(db, module)
+                self.save_module(db, module, organize=False)
             for collection in reversed(obj['collections']):
                 slug = self.save_collection(db, collection)
                 stamps = [collection.get(k,0) for k in ('last_attempt','last_success')]
@@ -289,4 +314,9 @@ class Store:
                 if any(type(v) is not int or not 0<=v<=2**53 for v in stamps) or stamps[0] not in (0,1):raise Problem('定时刷新备份无效')
                 db.execute('INSERT INTO file_sync VALUES (?,?,?,?,?)',(row['module_id'],*stamps,text(row.get('error',''),2000)))
             self.catalog.restore(db,obj.get('catalog',{}))
+            from . import library
+            try:
+                library.restore(self, db, obj.get('maintenance', {}))
+            except (KeyError, TypeError, AttributeError, ValueError, sqlite3.IntegrityError):
+                raise Problem('维护数据备份无效') from None
             self.catalog.migrate_icons(db)

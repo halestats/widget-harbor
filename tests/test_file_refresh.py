@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import patch
 import test_sync
 from hub.core import Problem
-from hub.network import destination
+from hub.network import Download, destination
 
 
 class FileRefreshTests(unittest.TestCase):
@@ -52,6 +52,21 @@ class FileRefreshTests(unittest.TestCase):
             return b'new',url
         with patch('hub.sync.fetch',side_effect=download):self.assertEqual(self.run_files([m['id']])['result']['failed'],1)
         with self.store.connect() as db:self.assertEqual(self.store.get_module(db,m['id'])['content'],b'old')
+
+    def test_unchanged_automatic_refresh_retains_file_metadata(self):
+        url = 'https://example.com/a.json'
+        m = self.module(url, kind='asset', filename='a.json', content=b'old', title='显示名称')
+        ident = m['id']
+        scheduler = self.server.scheduler
+        with patch('hub.sync.fetch', return_value=Download(b'old', url, '"v1"')):
+            self.assertEqual(scheduler.refresh_file(ident, conditional=True), (False, 3))
+        with patch('hub.sync.fetch', return_value=Download(None, url, '"v1"')) as download:
+            self.assertEqual(scheduler.refresh_file(ident, conditional=True), (False, 0))
+            self.assertEqual(download.call_args.kwargs['validators']['etag'], '"v1"')
+        with self.store.connect() as db:
+            self.assertEqual(self.store.get_module(db, ident), m)
+            self.assertIsNone(db.execute('SELECT 1 FROM module_previous WHERE module_id=?', (ident,)).fetchone())
+            self.assertGreater(db.execute('SELECT last_success FROM file_sync WHERE module_id=?', (ident,)).fetchone()[0], 0)
 
     def test_public_custom_port(self):
         with patch('hub.network.socket.getaddrinfo',return_value=[(2,1,6,'',('8.8.8.8',5090))]):
